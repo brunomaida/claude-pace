@@ -748,8 +748,9 @@ class Setup(unittest.TestCase):
         (self.cfg_dir / 'settings.json').write_text('{}', encoding='utf-8')
         with mock.patch.object(pacing.os, 'name', 'posix'), mock.patch.object(pacing.os, 'chmod') as chmod:
             pacing.cmd_setup(str(self.cfg_dir), pacing.__file__)
-        chmod.assert_called_once()
-        self.assertIsInstance(chmod.call_args.args[1], int)
+        self.assertTrue(chmod.called)
+        for call in chmod.call_args_list:  # one call restores settings.json, another may protect a temp file
+            self.assertIsInstance(call.args[1], int)
 
     def test_unwritableDir_returnsAReadableLineInsteadOfATraceback(self):
         with mock.patch.object(pacing.shutil, 'copyfile', side_effect=OSError('disk full')):
