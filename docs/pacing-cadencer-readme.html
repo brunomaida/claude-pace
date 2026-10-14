@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Usage cadencer (pace)</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,6 +93,11 @@
   .strip .cad.l1 { background: rgba(247,178,74,.18); color: var(--warn); }
   .strip .cad.off { background: var(--faint); color: var(--fg2); }
   .strip .dim { color: var(--fg3); }
+  /* Operate > Tune: the step effect wraps instead of scrolling, and the config table gets the wider column */
+  #ladder-out { display: flex; flex-wrap: wrap; align-items: center; gap: 6.8px 8.1px; white-space: normal; overflow-x: visible; }
+  #tune .grid2 { grid-template-columns: minmax(min(100%, 300px), 1fr) minmax(0, 1.8fr); }
+  #tune .tablewrap { overflow-x: visible; }
+  #tune td:first-child { white-space: normal; }
 
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 13.5px; }
   .card { display: flex; flex-direction: column; gap: 10.8px; padding: 13.5px 16.2px; min-width: 0; background: var(--bg0); border: 1px solid var(--line0); border-radius: 4px; }
@@ -151,6 +157,7 @@
     .sb-item.is-active { background: transparent; border-bottom-color: var(--sel); }
     .chip, .scope__meta { display: none; }
     td:first-child { white-space: normal; }
+    #tune .grid2 { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 760px) { .cmp-grid { grid-template-columns: minmax(0, 1fr); } }
   @media (prefers-reduced-motion: reduce) { .main { scroll-behavior: auto; } }
@@ -160,7 +167,7 @@
   <header class="topbar">
     <div class="brand">
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><polyline points="1,10 5,10 7,4 10,14 12,8 14,10 17,10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="brand__name">PACE</span><span class="brand__ver">v0.11</span>
+      <span class="brand__name">PACE</span><span class="brand__ver">v0.12</span>
     </div>
     <span class="vsep"></span>
     <div class="scope"><span class="scope__name" id="scope-name" data-pt="Cadenciador de uso">Usage cadencer</span><span class="scope__meta">hooks/pacing.py</span></div>

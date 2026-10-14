@@ -84,14 +84,23 @@ then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settin
 
 Only what has actually been run is listed. The package carries an install simulator (`tests/test_install.py`) that runs the hook commands and the command line through the shells and Python launchers present on the machine, in a profile whose path has a space and an accent. The `test` workflow runs it, with the rest of the package suite (213 tests), on every push.
 
-| OS (GitHub runner) | Shell | Python | Result |
+| Where (GitHub runner) | Shell | Python | Result |
 |---|---|---|---|
-| Ubuntu (`ubuntu-latest`) | `sh` | 3.9, 3.12, 3.13 | all pass: chain, each interpreter, first one or two interpreters missing, `python` absent, script missing, `settings.json` variants, read-only config dir |
-| macOS (`macos-latest`, Apple silicon) | `sh` | 3.9, 3.12, 3.13 | same as Ubuntu |
-| Windows (`windows-latest`) | Git Bash | 3.9, 3.12, 3.13 | all pass, including the chain and the fall-through |
-| Windows (`windows-latest`) | PowerShell 5.1 and PowerShell 7 | 3.9, 3.12, 3.13 | pass for each single interpreter and the absolute path; the `a \|\| b` chain is not run (see Limits) |
+| Ubuntu, macOS (Apple silicon), Windows | `sh`, `sh`, Git Bash | 3.9, 3.10, 3.11, 3.12, 3.13, 3.14 | all pass: chain, each interpreter, first one or two missing, `python` absent, script missing, `settings.json` variants |
+| Debian 12 slim, Fedora, Alpine containers | `sh` | system `python3`, no `python` | all pass: the chain falls through to `python3` |
+| Windows | PowerShell 5.1 and PowerShell 7 | 3.9 to 3.14 | pass for each single interpreter and the absolute path; the `a \|\| b` chain is not run (see Limits) |
 
-Not covered by any run: the Claude Code host itself (`${CLAUDE_PLUGIN_ROOT}` expansion in the command body, stdin payload keys, an omitted `matcher`), Linux distributions other than Ubuntu, Python 3.10, 3.11 and 3.14 as the matrix interpreter.
+Run by hand against the real Claude Code host (2.1.300, Windows 11, plugin loaded with `--plugin-dir`, state isolated):
+
+| Check | Result |
+|---|---|
+| Plugin hooks load and `/pace status` is answered by the prompt hook | pass |
+| `/pace:pace status` runs the command body, `${CLAUDE_PLUGIN_ROOT}` expands, `allowed-tools` approves it with no prompt | pass (after the rules were fixed to match the quoted script path) |
+| A decided pause is slept for a Bash and for a Read call (matcher omitted) | pass, pause marker written, no `pacing.err` |
+| A real subagent takes a slot at `SubagentStart` and releases it at `SubagentStop` | pass |
+| `/pace guide` hands the manual to the OS opener (`os.startfile`) | ran without error; the browser window was not observed by the test |
+
+Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
 
 ## Limits
 

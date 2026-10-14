@@ -29,7 +29,7 @@ import datetime, filecmp, glob, json, os, pathlib, re, shutil, sys, tempfile, ti
 
 # Version of pace itself, not a roadmap phase: every change or request adds 1 to the minor counter (0.1, 0.2, ...
 # 0.9, 0.10); the major moves only on an explicit release or macro request. The manual's brand tag must match.
-VERSION = '0.11'
+VERSION = '0.12'
 
 DEFAULTS = {
     'ceiling_pct': 95,                  # share of the weekly quota the budget may reach (5% reserve)
