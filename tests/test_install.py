@@ -99,7 +99,11 @@ def launcher_available(name: str) -> bool:
 
 
 def chain_supported(shell_name: str, argv) -> str:
-    """Empty string when the shell parses `a || b`; else the reason (Windows PowerShell 5.1 has no `||`)."""
+    """Empty string when `a || b` falls through a missing command `a`; else the reason.
+
+    Windows PowerShell 5.1 has no `||` at all; PowerShell 7 parses it but treats a missing command as an error,
+    not as a failed command, so the right side never runs.
+    """
     probe = 'pace-no-such-command || exit 0'
     r = subprocess.run(list(argv) + [probe], capture_output=True, timeout=TIMEOUT)
     if r.returncode == 0:
@@ -196,8 +200,9 @@ class HookFlow(Base):
                     if launcher in ('chain', 'fallback', 'fallback2'):
                         why = chain_supported(shell_name, argv)
                         if why:
-                            self.skipTest(f'{shell_name} cannot parse `a || b` ({why}); Claude Code documents '
-                                          'PowerShell for hooks only when Git Bash is not installed')
+                            self.skipTest(f'{shell_name} does not fall through `a || b` when `a` is missing '
+                                          f'({why[:90]}); Claude Code documents PowerShell for hooks only when '
+                                          'Git Bash is not installed')
                     self._one(label.replace('/', '_').replace(' ', ''), shell_name, argv, launcher, style)
 
     def _command(self, p: Profile, template: str, shell_name: str, launcher: str, style: str, args: str = '') -> str:

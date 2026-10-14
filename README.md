@@ -9,7 +9,7 @@ A Claude Code plugin that spreads your subscription use over the week and over t
 | Claude Code 2.1.80 or later | the status line input carries `rate_limits` from that version; without it pace has no data |
 | A Claude Pro or Max plan | `rate_limits` is only sent for those plans; API-key sessions stay `[n/a]` |
 | Python 3 on `PATH` (`python3`, `python`, or `py -3`) | every hook and the `/pace` command are one Python file |
-| Git for Windows, on Windows | Claude Code runs hook commands through Git Bash when it is installed and through PowerShell otherwise (hooks documentation); the hook commands use `||`, which Windows PowerShell 5.1 does not parse (see Limits) |
+| Git for Windows, on Windows | Claude Code runs hook commands through Git Bash when it is installed and through PowerShell otherwise (hooks documentation); the hook commands use `||`, which PowerShell does not run as a fallback (see Limits) |
 
 ## Install
 
@@ -82,19 +82,22 @@ then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settin
 
 ## Tested on
 
-Only what has actually been run is listed. The package carries an install simulator (`tests/test_install.py`) that runs the hook commands and the command line through the shells and Python launchers present on the machine, in a profile whose path has a space and an accent.
+Only what has actually been run is listed. The package carries an install simulator (`tests/test_install.py`) that runs the hook commands and the command line through the shells and Python launchers present on the machine, in a profile whose path has a space and an accent. The `test` workflow runs it, with the rest of the package suite (213 tests), on every push.
 
-| OS | Shell | Python | Result |
+| OS (GitHub runner) | Shell | Python | Result |
 |---|---|---|---|
-| Windows 11 | Git Bash | 3.12.5 | pass: chain as shipped, `python`, `py -3`, absolute path, first interpreter missing |
-| Windows 11 | Windows PowerShell 5.1 | 3.12.5 | pass for `python`, `py -3` and the absolute interpreter path; the `a \|\| b` chain does not parse (see Limits). `python3` and PowerShell 7 were not available to run |
-| macOS, Linux | `sh` | 3.9, 3.12, 3.13 | run by the CI workflow in `.github/workflows/test.yml`; not recorded here until it has run |
+| Ubuntu (`ubuntu-latest`) | `sh` | 3.9, 3.12, 3.13 | all pass: chain, each interpreter, first one or two interpreters missing, `python` absent, script missing, `settings.json` variants, read-only config dir |
+| macOS (`macos-latest`, Apple silicon) | `sh` | 3.9, 3.12, 3.13 | same as Ubuntu |
+| Windows (`windows-latest`) | Git Bash | 3.9, 3.12, 3.13 | all pass, including the chain and the fall-through |
+| Windows (`windows-latest`) | PowerShell 5.1 and PowerShell 7 | 3.9, 3.12, 3.13 | pass for each single interpreter and the absolute path; the `a \|\| b` chain is not run (see Limits) |
+
+Not covered by any run: the Claude Code host itself (`${CLAUDE_PLUGIN_ROOT}` expansion in the command body, stdin payload keys, an omitted `matcher`), Linux distributions other than Ubuntu, Python 3.10, 3.11 and 3.14 as the matrix interpreter.
 
 ## Limits
 
 - No status line, no data. Without `/pace setup` (or your own status line feeding pace) there are no samples, and pace stays inert.
 - API-key sessions send no usage data; `/pace status` says so.
-- Hook commands try `py -3`, then `python3`, then `python`, using `||`, and end in `exit 1`. Windows PowerShell 5.1 has no `||`, so on a Windows machine with PowerShell 5.1 and no Git for Windows the hooks fail to start; install Git for Windows. PowerShell 7 parses `||` but has not been tested here.
+- Hook commands try `py -3`, then `python3`, then `python`, using `||`, and end in `exit 1`. This is run by `sh` and Git Bash. Windows PowerShell 5.1 has no `||`, so with it alone (no Git for Windows) the hooks fail to start. PowerShell 7 parses `||` but a missing command is an error there rather than a failure to fall through, so under PowerShell the hooks work only when the first interpreter, `py`, exists (the python.org installer provides it). Installing Git for Windows avoids both.
 - Python missing from `PATH` makes every hook and `/pace` fail visibly and nothing is throttled.
 - `/pace on` delays tool calls by design; pacing never exceeds `cap_s` per model turn and keeps the gap short enough to stay inside the prompt cache.
 
