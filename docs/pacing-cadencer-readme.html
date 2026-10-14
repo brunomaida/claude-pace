@@ -1,0 +1,634 @@
+<title>Usage cadencer (pace)</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  /* Layout: Atlas shell (topbar 44px, sidebar 232px, content, statusbar 26px). Tokens: Atlas Gray 2 Ardosia + teal accent.
+     Single dark look by choice, like Atlas itself; below 760px the sidebar becomes a scrolling tab strip. */
+  :root {
+    --bg0: #293039; --bg1: #333b46; --bg2: #3d4653;
+    --line0: #3a424d; --line1: #485261; --line2: #5a6577;
+    --fg3: #8b96a5; --fg2: #adb8c6; --fg1: #d6dde6; --fg0: #eff3f7;
+    --ok: #3fd08f; --warn: #f7b24a; --err: #f26b68;
+    --sel: #5ec9bc; --selRgb: 94,201,188; --onSel: #0d1a19;
+    --faint: rgba(255,255,255,.05);
+    --font-ui: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    --sbw: 313.2px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg0); color: var(--fg0); font: 17.6px/1.45 var(--font-ui); }
+  a { color: var(--sel); text-decoration: none; }
+  a:hover { color: var(--fg0); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  p, h1, h2, h3, ul { margin: 0; padding: 0; }
+  code { font-family: var(--font-mono); font-size: .92em; background: var(--faint); border-radius: 3px; padding: 1.4px 6.8px; overflow-wrap: anywhere; color: var(--fg0); }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--fg3); border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  :focus-visible { outline: 1px solid var(--sel); outline-offset: 1px; }
+
+  .app { display: grid; grid-template-rows: 59.4px minmax(0, 1fr) 35.1px; grid-template-columns: var(--sbw) minmax(0, 1fr); height: 100%; background: var(--bg0); }
+
+  /* topbar */
+  .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 18.9px; height: 59.4px; padding-inline: max(21.6px, env(safe-area-inset-left, 0px)) max(21.6px, env(safe-area-inset-right, 0px)); background: var(--bg1); border-bottom: 1px solid var(--line1); white-space: nowrap; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 10.8px; line-height: 1; color: var(--sel); }
+  .brand__name { font: 700 17.6px/1 var(--font-ui); letter-spacing: .16em; color: var(--fg0); }
+  .brand__ver { font: 500 12.2px/1 var(--font-mono); letter-spacing: .06em; color: var(--fg3); }
+  .vsep { flex: none; width: 1.4px; height: 24.3px; background: var(--line1); }
+  .scope { display: flex; align-items: center; gap: 10.8px; min-width: 0; }
+  .scope__name { font: 600 14.9px/1 var(--font-ui); color: var(--fg1); overflow: hidden; text-overflow: ellipsis; }
+  .scope__meta { font: 500 12.8px/1 var(--font-mono); color: var(--fg3); }
+  .grow { flex: 1 1 auto; }
+  .chip { flex: none; padding: 5.4px 10.8px; border: 1px solid var(--line1); border-radius: 4px; font: 600 13.5px/1 var(--font-mono); color: var(--fg2); }
+  .seg { display: flex; flex: none; border: 1px solid var(--line1); border-radius: 4px; overflow: hidden; }
+  .seg button { height: 29.7px; padding: 0 12.2px; border: 0; background: transparent; color: var(--fg2); font: 600 13.5px/1 var(--font-ui); letter-spacing: .04em; }
+  .seg button + button { border-left: 1px solid var(--line1); }
+  .seg button[aria-pressed="true"] { background: var(--sel); color: var(--onSel); }
+
+  /* sidebar */
+  .sidebar { display: flex; flex-direction: column; min-height: 0; background: var(--bg1); border-right: 1px solid var(--line1); }
+  .sidebar__search { padding: 10.8px 10.8px 8.1px max(21.6px, env(safe-area-inset-left, 0px)); }
+  .input { width: 100%; height: 32.4px; padding: 0 10.8px; border: 1px solid var(--line1); border-radius: 4px; background: var(--bg0); color: var(--fg1); font: 500 13.5px/1 var(--font-mono); }
+  .input::placeholder { color: var(--fg3); }
+  .sidebar__list { flex: 1; min-height: 0; overflow: auto; padding: 0 10.8px 13.5px max(13.5px, calc(env(safe-area-inset-left, 0px) - 8.1px)); display: flex; flex-direction: column; gap: 2.7px; }
+  .sb-label { margin: 13.5px 0 2.7px 8.1px; font: 700 10.8px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--fg3); }
+  .sb-item { display: flex; align-items: center; gap: 9.5px; height: 35.1px; padding: 0 10.8px 0 10.8px; border-radius: 3px; border-left: 2px solid transparent; color: var(--fg2); font: 600 14.9px/1 var(--font-ui); white-space: nowrap; }
+  .sb-item:hover { background: var(--faint); color: var(--fg0); }
+  .sb-item.is-active { background: rgba(var(--selRgb), .12); border-left-color: var(--sel); color: var(--fg0); }
+  .sb-item[hidden] { display: none; }
+
+  /* content */
+  .main { min-width: 0; min-height: 0; overflow: auto; scroll-behavior: smooth; }
+  .content { max-width: 1040px; margin-inline: auto; padding-block: 18.9px 37.8px; padding-inline: max(21.6px, env(safe-area-inset-left, 0px)) max(21.6px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16.2px; }
+  .intro { color: var(--fg2); font-size: 16.9px; line-height: 1.6; text-wrap: pretty; }
+  .panel { display: flex; flex-direction: column; gap: 13.5px; background: var(--bg1); border-radius: 6px; padding: 16.2px 18.9px; min-width: 0; scroll-margin-top: 8px; }
+  .panel__head { display: flex; align-items: baseline; gap: 13.5px; flex-wrap: wrap; }
+  .label { font: 700 10.8px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--fg3); }
+  h1 { font: 700 20.2px/1.2 var(--font-ui); letter-spacing: .01em; }
+  h2 { font: 700 17.6px/1.2 var(--font-ui); color: var(--fg0); text-wrap: balance; }
+  h3 { font: 600 15.5px/1.3 var(--font-ui); color: var(--fg1); }
+  .prose { font-size: 16.2px; line-height: 1.6; color: var(--fg2); text-wrap: pretty; }
+  .prose strong, li strong { color: var(--fg0); font-weight: 600; }
+
+  .sunk { background: var(--bg0); border: 1px solid var(--line0); border-radius: 4px; }
+  .cmd { display: flex; align-items: center; gap: 10.8px; padding: 6.8px 8.1px 6.8px 13.5px; min-width: 0; }
+  .cmd code { background: none; padding: 0; flex: 1; min-width: 0; font-size: 15.5px; color: var(--fg0); }
+  .btn { flex: none; height: 29.7px; padding: 0 12.2px; border: 1px solid var(--line1); border-radius: 4px; background: var(--bg1); color: var(--fg1); font: 600 13.5px/1 var(--font-ui); }
+  .btn:hover { border-color: rgba(var(--selRgb), .6); color: var(--fg0); }
+
+  .tablewrap { overflow-x: auto; min-width: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 15.5px; }
+  th, td { text-align: left; padding: 8.1px 13.5px; border-bottom: 1px solid var(--line0); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font: 700 10.8px/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--fg3); white-space: nowrap; background: var(--bg2); }
+  td { color: var(--fg2); line-height: 1.5; }
+  td:first-child { white-space: nowrap; color: var(--fg1); }
+
+  .strip { padding: 9.5px 13.5px; font: 500 14.9px/1.7 var(--font-mono); color: var(--fg1); overflow-x: auto; white-space: nowrap; }
+  .strip .cad { background: rgba(var(--selRgb), .18); color: var(--sel); border-radius: 3px; padding: 2.7px 8.1px; font-weight: 600; }
+  .strip .cad.l1 { background: rgba(247,178,74,.18); color: var(--warn); }
+  .strip .cad.off { background: var(--faint); color: var(--fg2); }
+  .strip .dim { color: var(--fg3); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 13.5px; }
+  .card { display: flex; flex-direction: column; gap: 10.8px; padding: 13.5px 16.2px; min-width: 0; background: var(--bg0); border: 1px solid var(--line0); border-radius: 4px; }
+  .card.pick { border-color: rgba(var(--selRgb), .6); }
+  .tag { align-self: flex-start; padding: 2.7px 6.8px; border-radius: 2px; background: rgba(var(--selRgb), .16); font: 700 10.8px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--sel); }
+  ul.plain { list-style: none; display: flex; flex-direction: column; gap: 8.1px; }
+  ul.plain li { position: relative; padding-left: 18.9px; font-size: 16.2px; line-height: 1.55; color: var(--fg2); text-wrap: pretty; }
+  ul.plain li::before { content: ''; position: absolute; left: 2px; top: .62em; width: 6.8px; height: 6.8px; border-radius: 50%; background: var(--line2); }
+  details { background: var(--bg1); border: 1px solid var(--line0); border-radius: 4px; padding: 8.1px 13.5px; }
+  summary { cursor: pointer; font: 600 14.9px/1.4 var(--font-ui); color: var(--fg1); }
+  pre { margin: 10.8px 0 0; padding: 10.8px 13.5px; background: var(--bg0); border: 1px solid var(--line0); border-radius: 4px; overflow-x: auto; line-height: 1.5; }
+  pre code { background: none; padding: 0; font-size: 14.9px; }
+  .ladder { display: flex; flex-wrap: wrap; gap: 8.1px; }
+  .ladder button { height: 35.1px; padding: 0 13.5px; border: 1px solid var(--line1); border-radius: 4px; background: transparent; color: var(--fg2); font: 600 14.9px/1 var(--font-mono); }
+  .ladder button:hover { border-color: rgba(var(--selRgb), .6); color: var(--fg0); }
+  .ladder button[aria-pressed="true"] { border-color: var(--sel); background: rgba(var(--selRgb), .16); color: var(--sel); }
+  .lvl { font: 700 14.9px/1 var(--font-mono); }
+  .lvl.ok { color: var(--ok); } .lvl.l1 { color: var(--warn); } .lvl.l2, .lvl.l3 { color: var(--err); }
+
+  /* without vs with pace: inline SVG, drawn by the script from an illustrative model */
+  .cmp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .cmp-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cmp-title { display: flex; align-items: center; gap: 10.8px; flex-wrap: wrap; }
+  .tag.ill { background: rgba(247,178,74,.16); color: var(--warn); }
+  .chartwrap { overflow-x: auto; min-width: 0; padding: 8.1px 8.1px 2.7px; }
+  .chartwrap figure { margin: 0; }
+  .chartwrap svg { display: block; width: 100%; min-width: 0; max-width: 100%; height: auto; margin-inline: auto; }
+  .cv text { font-family: var(--font-ui); font-size: 11px; fill: var(--fg2); paint-order: stroke; stroke: var(--bg0); stroke-width: 3px; stroke-linejoin: round; }
+  .cv text.dim { fill: var(--fg3); }
+  .cv text.warn { fill: var(--warn); } .cv text.sel { fill: var(--sel); } .cv text.err { fill: var(--err); }
+  .cv .grid { stroke: var(--line0); } .cv .ax { stroke: var(--line1); }
+  .cv .ceil { stroke: var(--fg3); stroke-dasharray: 4 3; } .cv .reset { stroke: var(--fg2); }
+  .cv .wkend { fill: var(--faint); }
+  .cv .stall { fill: var(--err); fill-opacity: .14; }
+  .cv .raw { fill: none; stroke: var(--warn); stroke-width: 2; stroke-linejoin: round; }
+  .cv .paced { fill: none; stroke: var(--sel); stroke-width: 2; stroke-linejoin: round; }
+  .cv .ghost { stroke: var(--warn); stroke-opacity: .7; stroke-dasharray: 2 3; }
+  .cv .bar-raw { fill: var(--warn); fill-opacity: .75; } .cv .bar-paced { fill: var(--sel); fill-opacity: .6; }
+  .cv .dot { fill: var(--fg0); }
+  .cmp-legend { display: flex; flex-wrap: wrap; gap: 8.1px 18.9px; font-size: 14.9px; color: var(--fg2); }
+  .cmp-legend .sw { display: inline-block; width: 18.9px; height: 10.8px; margin-right: 8.1px; vertical-align: middle; border-radius: 1px; }
+  .sw.raw { height: 2.7px; background: var(--warn); } .sw.paced { height: 2.7px; background: var(--sel); }
+  .sw.ceil { height: 0; border-top: 1px dashed var(--fg3); } .sw.stall { background: rgba(242,107,104,.25); }
+  .sw.bar { background: linear-gradient(90deg, var(--warn) 50%, var(--sel) 50%); }
+
+  /* statusbar */
+  .statusbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 18.9px; height: 35.1px; padding-inline: max(21.6px, env(safe-area-inset-left, 0px)) max(21.6px, env(safe-area-inset-right, 0px)); background: var(--bg1); border-top: 1px solid var(--line1); font: 500 12.8px/1 var(--font-mono); color: var(--fg3); white-space: nowrap; overflow: hidden; }
+  .statusbar .dot { display: inline-block; width: 8.1px; height: 8.1px; border-radius: 50%; background: var(--ok); margin-right: 8.1px; }
+  .statusbar b { color: var(--fg1); font-weight: 600; }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 59.4px 45.9px minmax(0, 1fr) 35.1px; }
+    .sidebar { grid-column: 1; flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--line1); overflow-x: auto; }
+    .sidebar__search, .sb-label { display: none; }
+    .sidebar__list { flex-direction: row; align-items: center; overflow: visible; padding: 0 max(21.6px, env(safe-area-inset-left, 0px)); gap: 2.7px; }
+    .sb-item { height: 45.9px; border-left: 0; border-bottom: 2px solid transparent; border-radius: 0; }
+    .sb-item.is-active { background: transparent; border-bottom-color: var(--sel); }
+    .chip, .scope__meta { display: none; }
+    td:first-child { white-space: normal; }
+  }
+  @media (max-width: 760px) { .cmp-grid { grid-template-columns: minmax(0, 1fr); } }
+  @media (prefers-reduced-motion: reduce) { .main { scroll-behavior: auto; } }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><polyline points="1,10 5,10 7,4 10,14 12,8 14,10 17,10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand__name">PACE</span><span class="brand__ver">v0.9</span>
+    </div>
+    <span class="vsep"></span>
+    <div class="scope"><span class="scope__name" id="scope-name" data-pt="Cadenciador de uso">Usage cadencer</span><span class="scope__meta">hooks/pacing.py</span></div>
+    <span class="grow"></span>
+    <span class="chip" data-pt="padrão: medir off · reduzir off">default: measure off · reduce off</span>
+    <div class="seg" role="group" aria-label="Language / Idioma">
+      <button type="button" id="lang-en" aria-pressed="true">EN</button><button type="button" id="lang-pt" aria-pressed="false">PT</button>
+    </div>
+  </header>
+
+  <aside class="sidebar" aria-label="Index">
+    <div class="sidebar__search"><input class="input" id="filter" type="search" placeholder="filter sections…" aria-label="Filter sections"></div>
+    <nav class="sidebar__list" id="nav">
+      <span class="sb-label" data-pt="Começar">Start</span>
+      <a class="sb-item" href="#compare" data-pt="Sem e com o pace">Without vs with pace</a>
+      <a class="sb-item" href="#install" data-pt="Instalar">Install</a>
+      <a class="sb-item" href="#commands" data-pt="Comandos">Commands</a>
+      <span class="sb-label" data-pt="Operar">Operate</span>
+      <a class="sb-item" href="#statusline">Status line</a>
+      <a class="sb-item" href="#tune" data-pt="Ajustar">Tune</a>
+      <span class="sb-label" data-pt="Referência">Reference</span>
+      <a class="sb-item" href="#decide" data-pt="Como decide">How it decides</a>
+      <a class="sb-item" href="#limits" data-pt="Garantias e limites">Guarantees and limits</a>
+      <a class="sb-item" href="#remove" data-pt="Remover">Remove</a>
+      <a class="sb-item" href="#files" data-pt="Arquivos">Files</a>
+    </nav>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="content">
+      <h1 data-pt="Cadenciador de uso (pace)">Usage cadencer (pace)</h1>
+      <p class="intro" data-pt="Mantém o consumo no ritmo da cota semanal (eixo <code>wk</code>) e da janela de 5 h (eixo <code>5h</code>): mede e, se você pedir, adiciona uma pausa curta antes de cada chamada de ferramenta. Não troca modelo nem effort.">Keeps usage on pace with the weekly quota (axis <code>wk</code>) and the 5 h window (axis <code>5h</code>): it measures and, if you ask, adds a short pause before each tool call. It never switches model or effort.</p>
+      <ul class="plain">
+        <li data-pt="<strong>Uso intenso Pro/Max:</strong> indicador com limites nas janelas de 5 h e semana."><strong>Heavy Pro/Max use:</strong> a gauge with limits for the 5 h and weekly windows.</li>
+        <li data-pt="<strong>Muitas frentes juntas:</strong> agentes em paralelo seguem uma cadência só."><strong>Many fronts at once:</strong> parallel agents share one steady cadence.</li>
+        <li data-pt="<strong>Mesma cota, outras ferramentas:</strong> Desktop/Design pesado freia o Code."><strong>Same quota, other tools:</strong> heavy Desktop/Design slows Claude Code.</li>
+        <li data-pt="<strong>Menos travadas:</strong> a pausa cresce antes da janela de 5 h bater no teto."><strong>Fewer stalls:</strong> the pause grows before the 5 h window hits the ceiling.</li>
+        <li data-pt="<strong>Reserva semanal:</strong> distribui a semana pelos dias úteis, 5% de folga."><strong>Weekly reserve:</strong> spreads the week over business days, 5% kept.</li>
+        <li data-pt="<strong>Uma conta só:</strong> todas as sessões e subagentes somam juntos."><strong>One account:</strong> all sessions and subagents count together.</li>
+        <li data-pt="<strong>Custo previsível:</strong> pausas abaixo do TTL do cache."><strong>Predictable cost:</strong> pauses stay under the cache TTL.</li>
+        <li data-pt="<strong>Ver antes:</strong> <code>pace measure</code> mostra o corte, sem pausar."><strong>See first:</strong> <code>pace measure</code> shows the cut, pauses nothing.</li>
+        <li data-pt="<strong>Seu controle:</strong> desligado por padrão, degrau manual, libera em erro."><strong>Your control:</strong> off by default, manual step, fail-open.</li>
+      </ul>
+
+      <section class="panel" id="compare">
+        <div class="panel__head"><span class="label" data-pt="Começar">Start</span><h2 data-pt="Como o pace muda a curva">How pace changes the curve</h2><span class="grow"></span>
+          <span class="tag ill" data-pt="Modelo ilustrativo, não são dados medidos">Illustrative model, not measured data</span>
+        </div>
+        <p class="prose" data-pt="O pace atrasa chamadas; não reduz os tokens que uma tarefa precisa. O mesmo trabalho termina depois de uma rajada sem freio, mas sem bater no teto e travar até o reset; no reset, as duas curvas usaram quase a mesma parte da janela. O ganho depende de quanto da janela você usa: bem abaixo do teto, há pouco a ganhar. <strong>A</strong> marca quando o mesmo conjunto de tarefas termina em cada gráfico.">Pace delays calls; it does not reduce the tokens a task needs. The same work finishes later than an unrestricted burst, but without hitting the ceiling and stalling until the reset; by the reset both curves have used about the same share of the window. The gain depends on how much of the window you use: well below the ceiling there is little to gain. <strong>A</strong> marks when the same task set finishes in each chart.</p>
+        <div class="cmp-grid">
+          <div class="cmp-cell"><div class="cmp-title"><h3 data-pt="Sem pace">Without pace</h3><span class="label" data-pt="janela de 5 h">5 h window</span></div><div class="chartwrap sunk"><figure id="cmp-raw-5h" role="img" aria-label="Illustrative model."><svg class="cv" viewBox="0 0 400 206" aria-hidden="true" focusable="false"></svg></figure></div></div>
+          <div class="cmp-cell"><div class="cmp-title"><h3 data-pt="Sem pace">Without pace</h3><span class="label" data-pt="Semana">Week</span></div><div class="chartwrap sunk"><figure id="cmp-raw-wk" role="img" aria-label="Illustrative model."><svg class="cv" viewBox="0 0 400 206" aria-hidden="true" focusable="false"></svg></figure></div></div>
+          <div class="cmp-cell"><div class="cmp-title"><h3 data-pt="Com pace">With pace</h3><span class="label" data-pt="janela de 5 h">5 h window</span></div><div class="chartwrap sunk"><figure id="cmp-paced-5h" role="img" aria-label="Illustrative model."><svg class="cv" viewBox="0 0 400 206" aria-hidden="true" focusable="false"></svg></figure></div></div>
+          <div class="cmp-cell"><div class="cmp-title"><h3 data-pt="Com pace">With pace</h3><span class="label" data-pt="Semana">Week</span></div><div class="chartwrap sunk"><figure id="cmp-paced-wk" role="img" aria-label="Illustrative model."><svg class="cv" viewBox="0 0 400 206" aria-hidden="true" focusable="false"></svg></figure></div></div>
+        </div>
+        <div class="cmp-legend">
+          <span><i class="sw raw"></i><span data-pt="Uso acumulado sem pace (% da cota da janela)">Cumulative usage without pace (% of the window quota)</span></span>
+          <span><i class="sw paced"></i><span data-pt="Uso acumulado com pace">Cumulative usage with pace</span></span>
+          <span><i class="sw ceil"></i><span data-pt="Teto de 95%">95% ceiling</span></span>
+          <span><i class="sw stall"></i><span data-pt="Bloqueado, esperando o reset">Blocked, waiting for reset</span></span>
+          <span><i class="sw bar"></i><span data-pt="Barras: ritmo de uso por intervalo">Bars: usage rate per interval</span></span>
+        </div>
+      </section>
+
+      <section class="panel" id="install">
+        <div class="panel__head"><span class="label" data-pt="Começar">Start</span><h2 data-pt="Instalar">Install</h2></div>
+        <p class="prose" data-pt="Requisitos: Claude Code <strong>2.1.80+</strong>, plano <strong>Pro ou Max</strong> (chave de API não recebe uso), <strong>Python 3</strong> no PATH. Plugin ainda não publicado: instalação manual, em 4 passos.">Requirements: Claude Code <strong>2.1.80+</strong>, <strong>Pro or Max</strong> plan (an API key gets no usage data), <strong>Python 3</strong> on PATH. No plugin published yet: manual install, 4 steps.</p>
+        <div class="grid2">
+          <div class="card">
+            <span class="tag" data-pt="1 · Arquivos">1 · Files</span>
+            <p class="prose" data-pt="Copie para o <code>~/.claude</code> da máquina: <code>hooks/pacing.py</code> e <code>commands/pace.md</code>. <code>config/pacing.config.json</code> é opcional.">Copy to the machine's <code>~/.claude</code>: <code>hooks/pacing.py</code> and <code>commands/pace.md</code>. <code>config/pacing.config.json</code> is optional.</p>
+          </div>
+          <div class="card">
+            <span class="tag">2 · Hooks</span>
+            <p class="prose" data-pt="Mescle no bloco <code>hooks</code> do <code>settings.json</code>, sem apagar os existentes. O <code>timeout</code> 60 do <code>PreToolUse</code> é obrigatório.">Merge into the <code>hooks</code> block of <code>settings.json</code>, keeping the existing ones. The <code>PreToolUse</code> <code>timeout</code> of 60 is required.</p>
+            <details><summary data-pt="JSON dos 4 hooks">JSON of the 4 hooks</summary>
+<pre><code>"hooks": {
+  "PreToolUse": [
+    { "matcher": "*", "hooks": [ { "type": "command",
+      "command": "python -S \"$HOME/.claude/hooks/pacing.py\" enforce", "timeout": 60 } ] }
+  ],
+  "UserPromptSubmit": [
+    { "hooks": [ { "type": "command",
+      "command": "python -S \"$HOME/.claude/hooks/pacing.py\" prompt", "timeout": 5 } ] }
+  ],
+  "SubagentStart": [
+    { "hooks": [ { "type": "command",
+      "command": "python -S \"$HOME/.claude/hooks/pacing.py\" agent-start", "timeout": 5 } ] }
+  ],
+  "SubagentStop": [
+    { "hooks": [ { "type": "command",
+      "command": "python -S \"$HOME/.claude/hooks/pacing.py\" agent-done", "timeout": 5 } ] }
+  ]
+}</code></pre></details>
+          </div>
+        </div>
+        <h3 data-pt="3 · Como o pace recebe o uso (escolha uma)">3 · How pace gets usage (pick one)</h3>
+        <p class="prose" data-pt="A statusline é a única fonte de uso (<code>rate_limits</code>). Rode o comando numa sessão nova; todos fazem backup do <code>settings.json</code> e nunca sobrescrevem uma statusline que não seja do pace.">The status line is the only source of usage (<code>rate_limits</code>). Run the command in a new session; each backs up <code>settings.json</code> and never overwrites a status line that is not pace's.</p>
+        <div class="grid2">
+          <div class="card pick">
+            <span class="tag" data-pt="A · Com o segmento na statusline">A · With the segment in the status line</span>
+            <div class="cmd sunk"><code>pace setup</code><button class="btn" type="button" data-copy="pace setup">Copy</button></div>
+            <p class="prose" data-pt="Grava uma <code>statusLine</code> com o layout L1 (modelo, uso, cadência). Se já houver outra, mantém a sua e mostra como encadenar o segmento.">Writes a <code>statusLine</code> with layout L1 (model, usage, cadence). If you already have one, it keeps yours and shows how to chain the segment.</p>
+          </div>
+          <div class="card pick">
+            <span class="tag" data-pt="B · Sem alterar a statusline">B · Without changing the status line</span>
+            <div class="cmd sunk"><code>pace setup silent</code><button class="btn" type="button" data-copy="pace setup silent">Copy</button></div>
+            <p class="prose" data-pt="Grava uma <code>statusLine</code> que <strong>não imprime nada</strong>: o pace só colhe o uso. O estado fica em <code>pace status</code> e <code>pace brief</code>.">Writes a <code>statusLine</code> that <strong>prints nothing</strong>: pace only collects usage. State is in <code>pace status</code> and <code>pace brief</code>.</p>
+            <p class="prose" data-pt="Já tem statusline própria? Nada é tocado: o comando mostra a linha a acrescentar ao seu script:">Already have your own status line? Nothing is touched: the command prints the line to add to your script:</p>
+            <div class="cmd sunk"><code>python -S "$HOME/.claude/pace/pacing.py" statusline --record-only &gt;/dev/null</code></div>
+          </div>
+        </div>
+        <h3 data-pt="4 · Ligar">4 · Turn on</h3>
+        <div class="cmd sunk"><code>pace on</code><button class="btn" type="button" data-copy="pace on">Copy</button></div>
+        <p class="prose" data-pt="Até a 1ª amostra (após a 1ª resposta da sessão) <code>pace status</code> diz <code>no usage data</code>. Se persistir: versão do Claude Code, plano sem <code>rate_limits</code> ou statusline sobreposta por <code>settings.local.json</code>.">Until the first sample (after the session's first reply) <code>pace status</code> says <code>no usage data</code>. If it persists: Claude Code version, a plan without <code>rate_limits</code>, or a status line overridden by <code>settings.local.json</code>.</p>
+      </section>
+
+      <section class="panel" id="commands">
+        <div class="panel__head"><span class="label" data-pt="Começar">Start</span><h2 data-pt="Comandos">Commands</h2></div>
+        <p class="prose" data-pt="Digite sem barra (<code>pace on</code>): o hook trata e não gasta tokens. <code>/pace on</code> também funciona. Alternativa se a barra não for interceptada:">Type without a slash (<code>pace on</code>): the hook handles it and spends no tokens. <code>/pace on</code> also works. Fallback if the slash form is not intercepted:</p>
+        <div class="cmd sunk"><code>! python -S "$HOME/.claude/hooks/pacing.py" ctl on</code><button class="btn" type="button" data-copy='! python -S "$HOME/.claude/hooks/pacing.py" ctl on'>Copy</button></div>
+        <div class="grid2">
+          <div class="tablewrap sunk"><table>
+            <thead><tr><th data-pt="Ligar e medir">Turn on and measure</th><th data-pt="Efeito">Effect</th></tr></thead>
+            <tbody>
+              <tr><td><code>pace on</code> / <code>off</code></td><td data-pt="Liga/desliga a <strong>redução</strong> nos dois eixos (pausa + teto de subagentes).">Turns <strong>reduction</strong> on/off on both axes (pause + subagent cap).</td></tr>
+              <tr><td><code>pace measure</code> [<code>off</code>]</td><td data-pt="Mostra cadência atual, necessária e redução proposta, sem agir.">Shows current cadence, needed cadence and proposed cut, without acting.</td></tr>
+              <tr><td><code>pace wk|5h on|off|measure</code></td><td data-pt="O mesmo, só num eixo.">Same, one axis only.</td></tr>
+              <tr><td><code>pace up</code> / <code>down</code></td><td data-pt="Mais/menos freio: um degrau do multiplicador. A statusline marca <code>manual x…</code>.">More/less brake: one multiplier step. The status line shows <code>manual x…</code>.</td></tr>
+              <tr><td><code>pace auto</code></td><td data-pt="Volta ao degrau sugerido (<code>x1.0</code>).">Back to the suggested step (<code>x1.0</code>).</td></tr>
+              <tr><td><code>pace reset</code></td><td data-pt="Liga os dois eixos e volta a <code>x1.0</code>.">Turns both axes on and returns to <code>x1.0</code>.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="tablewrap sunk"><table>
+            <thead><tr><th data-pt="Ver e configurar">See and configure</th><th data-pt="Efeito">Effect</th></tr></thead>
+            <tbody>
+              <tr><td><code>pace</code> / <code>status</code></td><td data-pt="Interruptores, degrau, <code>r</code>, orçamento/dia, cadência por janela e proposta.">Switches, step, <code>r</code>, daily budget, cadence per window and proposal.</td></tr>
+              <tr><td><code>pace brief</code></td><td data-pt="Resumo curto por eixo, para clientes estreitos (app remoto).">Short per-axis summary, for narrow clients (remote app).</td></tr>
+              <tr><td><code>pace guide</code></td><td data-pt="Abre este manual no navegador (ou imprime o caminho em sessão remota).">Opens this manual in the browser (or prints its path in a remote session).</td></tr>
+              <tr><td><code>pace template L1|L2|C1|C2|off</code></td><td data-pt="Layout da statusline inteira; <code>off</code> volta ao do seu script.">Whole status line layout; <code>off</code> returns to your script's.</td></tr>
+              <tr><td><code>pace setup</code> [<code>silent</code>]</td><td data-pt="Grava a <code>statusLine</code> do pace (ver Instalar).">Writes pace's <code>statusLine</code> (see Install).</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <p class="prose" data-pt="Rotina sugerida: <code>pace measure</code> por um dia, comparar a proposta com a lentidão sentida, depois <code>pace on</code>.">Suggested routine: <code>pace measure</code> for a day, compare the proposal with the slowness you feel, then <code>pace on</code>.</p>
+      </section>
+
+      <section class="panel" id="statusline">
+        <div class="panel__head"><span class="label" data-pt="Operar">Operate</span><h2 data-pt="Ler a statusline">Reading the status line</h2></div>
+        <div class="strip sunk"><span class="cad off">cadence: [off] +40%</span> <span class="dim" data-pt="&nbsp;padrão: só o desvio">&nbsp;default: deviation only</span></div>
+        <div class="strip sunk"><span class="cad l1">cadence: [L1] week:+33% 2&gt;0.3%/h -83% ~25s r:off</span> <span class="dim" data-pt="&nbsp;medindo: ~ = proposta, não aplicada">&nbsp;measuring: ~ = proposal, not applied</span></div>
+        <div class="strip sunk"><span class="cad l1">cadence: [L1] week:+33% 12&gt;8%/h -33% . 5h:14&gt;0.6%/h -96% 45s! r:wk+5h</span> <span class="dim" data-pt="&nbsp;atuando, dois eixos">&nbsp;acting, both axes</span></div>
+        <p class="prose" data-pt="<code>cadence: [estado] [week:desvio atual&gt;necessária %/h -corte] [. 5h:…] [pausa] [degrau] [subagentes] [%/dia] r:wk|5h|wk+5h|off</code>. Só aparece o que está ativo.">Format: <code>cadence: [state] [week:deviation current&gt;needed %/h -cut] [. 5h:…] [pause] [step] [subagents] [%/day] r:wk|5h|wk+5h|off</code>. Only active parts appear.</p>
+        <div class="tablewrap sunk"><table>
+          <thead><tr><th data-pt="Trecho">Part</th><th data-pt="Significa">Means</th></tr></thead>
+          <tbody>
+            <tr><td><code>[off] +40%</code></td><td data-pt="Padrão. 40% da cota semanal acima do orçamento esperado até agora.">Default. 40% of the weekly quota above the budget expected so far.</td></tr>
+            <tr><td><code>2&gt;0.3%/h -83%</code></td><td data-pt="Consome 2%/h, o ritmo necessário é 0,3%/h: cortar 83%. No bloco <code>5h:</code> o % é da janela de 5 h.">Burning 2%/h, the needed pace is 0.3%/h: cut 83%. In the <code>5h:</code> block the % is of the 5 h window.</td></tr>
+            <tr><td><code>25s</code> / <code>~25s</code> / <code>45s!</code></td><td data-pt="Pausa aplicada / apenas proposta / no teto (<code>cap_s</code>).">Pause applied / only proposed / at the cap (<code>cap_s</code>).</td></tr>
+            <tr><td><code>manual x1.5</code></td><td data-pt="Degrau escolhido com <code>up</code>/<code>down</code>.">Step chosen with <code>up</code>/<code>down</code>.</td></tr>
+            <tr><td><code>2/2 8%/d</code></td><td data-pt="Nível 2: 2 de 2 subagentes ativos; orçamento de 8% por dia útil restante.">Level 2: 2 of 2 subagents active; 8% budget per remaining business day.</td></tr>
+            <tr><td><code>[L3] 45s! 5h:38m</code></td><td data-pt="Janela de 5 h quase cheia; volta em 38 min.">5 h window nearly full; back in 38 min.</td></tr>
+            <tr><td><code>[?]</code> / <code>[n/a]</code></td><td data-pt="Dado velho (&gt; 10 min) ou sem <code>rate_limits</code>. Nenhuma pausa é aplicada.">Stale data (&gt; 10 min) or no <code>rate_limits</code>. No pause is applied.</td></tr>
+            <tr><td><code>r:wk</code> / <code>r:off</code></td><td data-pt="Eixos em que a redução está ligada.">Axes where reduction is on.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section class="panel" id="tune">
+        <div class="panel__head"><span class="label" data-pt="Operar">Operate</span><h2 data-pt="Ajustar">Tune</h2></div>
+        <div class="grid2">
+          <div class="card">
+            <h3 data-pt="Na hora: degraus">Now: steps</h3>
+            <p class="prose" data-pt="Pausa recomendada × degrau, limitada a <code>cap_s</code>. Efeito sobre 25 s:">Recommended pause × step, capped at <code>cap_s</code>. Effect on 25 s:</p>
+            <div class="ladder" id="ladder" role="group" aria-label="Steps"></div>
+            <div class="strip sunk" id="ladder-out" aria-live="polite"></div>
+            <h3 data-pt="Calibrar <code>r</code>">Calibrate <code>r</code></h3>
+            <p class="prose" data-pt="<code>r = Δsemana / Δ5h</code>: se a semana subiu 2% enquanto a de 5 h subiu 20%, <code>r = 0.1</code>. <code>pace</code> mostra o Δ5h por janela."><code>r = Δweek / Δ5h</code>: if the week rose 2% while the 5 h window rose 20%, <code>r = 0.1</code>. <code>pace</code> shows Δ5h per window.</p>
+          </div>
+          <div class="tablewrap sunk"><table>
+            <thead><tr><th>config/pacing.config.json</th><th data-pt="Padrão">Default</th><th data-pt="Quando mexer">When to change</th></tr></thead>
+            <tbody>
+              <tr><td><code>hours</code> / <code>workdays</code></td><td>[0,24] / [0..4]</td><td data-pt="<strong>Ajuste à sua janela real</strong> (ex. <code>[9,19]</code>). Com <code>[0,24]</code> as noites contam e a taxa necessária fica ~3x baixa para quem usa 8 h/dia."><strong>Set it to your real window</strong> (e.g. <code>[9,19]</code>). With <code>[0,24]</code> nights count and the needed rate is ~3x low for someone working 8 h/day.</td></tr>
+              <tr><td><code>r_pp7_per_pp5</code></td><td>0.1</td><td data-pt="Quanto da semana 1% da janela de 5 h consome.">How much of the week 1% of the 5 h window consumes.</td></tr>
+              <tr><td><code>cap_s</code></td><td>45</td><td data-pt="Teto de uma pausa (&lt; TTL do cache e &lt; timeout 60).">Ceiling of one pause (&lt; cache TTL and &lt; timeout 60).</td></tr>
+              <tr><td><code>k_s_per_pct</code> / <code>k5_s_per_pct</code></td><td>20 / 9</td><td data-pt="Segundos de pausa por 1% de déficit (semana / 5 h).">Seconds of pause per 1% of deficit (week / 5 h).</td></tr>
+              <tr><td><code>deadband_pct</code> / <code>deadband5_pct</code></td><td>2 / 0.5</td><td data-pt="Desvio tolerado antes de agir (semana / 5 h).">Deviation tolerated before acting (week / 5 h).</td></tr>
+              <tr><td><code>ceiling_pct</code></td><td>95</td><td data-pt="Teto de uso; o resto é reserva.">Usage ceiling; the rest is reserve.</td></tr>
+              <tr><td><code>n_max</code></td><td>2</td><td data-pt="Subagentes simultâneos no nível 2.">Concurrent subagents at level 2.</td></tr>
+              <tr><td><code>exempt_tools</code></td><td>AskUserQuestion, ExitPlanMode</td><td data-pt="Nunca esperam.">Never wait.</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <p class="prose" data-pt="O arquivo é lido a cada chamada: vale na hora, sem reiniciar.">The file is read on every call: changes apply immediately, no restart.</p>
+      </section>
+
+      <section class="panel" id="decide">
+        <div class="panel__head"><span class="label" data-pt="Referência">Reference</span><h2 data-pt="Como decide">How it decides</h2></div>
+        <div class="grid2">
+          <div class="tablewrap sunk"><table>
+            <thead><tr><th data-pt="Nível">Level</th><th data-pt="Quando">When</th><th data-pt="O que faz">Does</th></tr></thead>
+            <tbody>
+              <tr><td><span class="lvl ok">ok</span></td><td data-pt="Desvio ≤ 2% e 5 h sem déficit">Deviation ≤ 2% and no 5 h deficit</td><td data-pt="Nada.">Nothing.</td></tr>
+              <tr><td><span class="lvl l1">L1</span></td><td data-pt="À frente do orçamento">Ahead of budget</td><td data-pt="Pausa <code>min(cap, déficit × k)</code> por turno; 0 sem consumo recente.">Pause <code>min(cap, deficit × k)</code> per turn; 0 with no recent use.</td></tr>
+              <tr><td><span class="lvl l2">L2</span></td><td data-pt="Pausa no teto por 2 decisões; desce após 15 min">Pause at the cap for 2 decisions; drops after 15 min</td><td data-pt="Mantém a pausa e nega subagentes acima de <code>n_max</code>.">Keeps the pause and denies subagents above <code>n_max</code>.</td></tr>
+              <tr><td><span class="lvl l3">L3</span></td><td data-pt="Janela de 5 h ≥ 95%">5 h window ≥ 95%</td><td data-pt="Pausa no teto; não nega chamadas.">Pause at the cap; does not deny calls.</td></tr>
+            </tbody>
+          </table></div>
+          <ul class="plain">
+            <li data-pt="<strong>Cadência atual</strong> = <code>Δ5h × r ÷ horas</code> (% da semana/h). <strong>Necessária</strong> = <code>orçamento/dia ÷ horas ativas</code>. <strong>Corte</strong> = <code>1 − necessária ÷ atual</code>."><strong>Current cadence</strong> = <code>Δ5h × r ÷ hours</code> (% of the week/h). <strong>Needed</strong> = <code>daily budget ÷ active hours</code>. <strong>Cut</strong> = <code>1 − needed ÷ current</code>.</li>
+            <li data-pt="<strong>Eixo 5h:</strong> necessária = <code>(95% − usado) ÷ horas até o reset</code>; déficit = maior <code>Δ5h − necessária × tempo</code> das cinco janelas. Só pausa se o ritmo esgotaria a janela antes do reset."><strong>5h axis:</strong> needed = <code>(95% − used) ÷ hours to reset</code>; deficit = largest <code>Δ5h − needed × time</code> of the five windows. It pauses only if the pace would exhaust the window before reset.</li>
+            <li data-pt="<strong>Orçamento</strong> = <code>95% × dias úteis decorridos ÷ 5</code> (quinta a quinta, 06:00 BRT). Uso no fim de semana reduz o orçamento dos dias úteis."><strong>Budget</strong> = <code>95% × elapsed business days ÷ 5</code> (Thursday to Thursday, 06:00 BRT). Weekend use lowers the weekday budget.</li>
+            <li data-pt="<strong>Dois eixos:</strong> vale a maior pausa, não a soma. O uso de sessões diferentes é unido por um envelope monotônico: leitura velha de sessão ociosa não conta."><strong>Two axes:</strong> the larger pause wins, not the sum. Usage from different sessions is merged by a monotonic envelope: a stale reading from an idle session does not count.</li>
+            <li data-pt="<strong>Virada de janela:</strong> quando a janela de 5 h reinicia (ou a semana vira) a leitura antiga é descartada na hora: o nível 3 e a pausa de 5 h terminam, a statusline desenha a janela com 0% e a decisão é recalculada sem esperar 30 s. O degrau manual (<code>manual x…</code>) sobrevive ao reset; <code>pace auto</code> o limpa."><strong>Window reset:</strong> when the 5 h window resets (or the week turns) its old reading is dropped at once: level 3 and the 5 h pause end, the status line draws the window as 0%, and the decision is recomputed without waiting 30 s. A manual step (<code>manual x…</code>) survives the reset; <code>pace auto</code> clears it.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="panel" id="limits">
+        <div class="panel__head"><span class="label" data-pt="Referência">Reference</span><h2 data-pt="Garantias e limites">Guarantees and limits</h2></div>
+        <div class="grid2">
+          <div class="card"><h3 data-pt="Garantias">Guarantees</h3><ul class="plain">
+            <li data-pt="Desligado por padrão; sem <code>ctl.json</code> o hook sai sem agir.">Off by default; with no <code>ctl.json</code> the hook exits without acting.</li>
+            <li data-pt="Erro, dado velho ou falta de <code>rate_limits</code> libera a execução.">An error, stale data or missing <code>rate_limits</code> lets the call run.</li>
+            <li data-pt="Pausa ≤ <code>cap_s</code> (máx. 55 s) e, por turno, abaixo de <code>cache_ttl_s − cache_margin_s</code> (210 s): o cache barato continua valendo.">Pause ≤ <code>cap_s</code> (max 55 s) and, per turn, below <code>cache_ttl_s − cache_margin_s</code> (210 s): the cheap cache keeps hitting.</li>
+            <li data-pt="Uma janela que já reiniciou nunca mantém pausa.">A window that already reset never keeps a pause.</li>
+            <li data-pt="Estado volátil em <code>%TEMP%\claude-pacing</code>, podado a 40 min.">Volatile state in <code>%TEMP%\claude-pacing</code>, pruned at 40 min.</li>
+          </ul></div>
+          <div class="card"><h3 data-pt="Limites">Limits</h3><ul class="plain">
+            <li data-pt="A pausa adia o consumo; não reduz tokens por tarefa.">The pause delays consumption; it does not cut tokens per task.</li>
+            <li data-pt="O uso de outras ferramentas (Claude Desktop/Design) só aparece quando uma sessão do Claude Code recebe resposta.">Usage from other tools (Claude Desktop/Design) shows up only when a Claude Code session gets a reply.</li>
+            <li data-pt="Cada chamada de ferramenta e cada refresh da statusline inicia um Python (~83 ms).">Every tool call and every status line refresh starts a Python process (~83 ms).</li>
+            <li data-pt="Resolução de 1%: ~3 min na janela de 5 h, ~1,2 h na semana.">1% resolution: ~3 min on the 5 h window, ~1.2 h on the week.</li>
+            <li data-pt="Testado por unidade e processo; ainda não exercitado ao vivo numa sessão de trabalho.">Tested by unit and process tests; not yet exercised live in a working session.</li>
+          </ul></div>
+        </div>
+      </section>
+
+      <div class="grid2">
+        <section class="panel" id="remove">
+          <div class="panel__head"><span class="label" data-pt="Referência">Reference</span><h2 data-pt="Remover">Remove</h2></div>
+          <ul class="plain">
+            <li data-pt="<strong>Pausar:</strong> <code>pace off</code>."><strong>Pause:</strong> <code>pace off</code>.</li>
+            <li data-pt="<strong>Limpar estado:</strong> apague <code>%TEMP%\claude-pacing</code>."><strong>Clear state:</strong> delete <code>%TEMP%\claude-pacing</code>.</li>
+            <li data-pt="<strong>De vez:</strong> tire do <code>settings.json</code> os 4 hooks que chamam <code>pacing.py</code> e a <code>statusLine</code> do pace; apague <code>commands/pace.md</code> e <code>~/.claude/pace/</code>."><strong>Fully:</strong> remove from <code>settings.json</code> the 4 hooks that call <code>pacing.py</code> and pace's <code>statusLine</code>; delete <code>commands/pace.md</code> and <code>~/.claude/pace/</code>.</li>
+          </ul>
+        </section>
+        <section class="panel" id="files">
+          <div class="panel__head"><span class="label" data-pt="Referência">Reference</span><h2 data-pt="Arquivos">Files</h2></div>
+          <ul class="plain">
+            <li data-pt="<code>hooks/pacing.py</code>: amostrador, controlador, enforcer, comandos."><code>hooks/pacing.py</code>: sampler, controller, enforcer, commands.</li>
+            <li data-pt="<code>commands/pace.md</code>: comando <code>/pace</code>."><code>commands/pace.md</code>: the <code>/pace</code> command.</li>
+            <li data-pt="<code>config/pacing.config.json</code>: parâmetros."><code>config/pacing.config.json</code>: parameters.</li>
+            <li data-pt="<code>hooks/tests/test_pacing.py</code>: testes."><code>hooks/tests/test_pacing.py</code>: tests.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="statusbar">
+    <span><span class="dot"></span><b>pace</b></span>
+    <span>Claude Code <b>2.1.80+</b></span>
+    <span id="sb-plan">plan <b>Pro / Max</b></span>
+    <span>Python <b>3</b></span>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var lang = 'en';
+    var T = {
+      en: { title: 'Usage cadencer (pace)', copy: 'Copy', copied: 'Copied', pick: 'Select and copy', cap: ', capped at ', rec: ' (rec.)', filter: 'filter sections…', plan: 'plan ' },
+      pt: { title: 'Cadenciador de uso (pace)', copy: 'Copiar', copied: 'Copiado', pick: 'Selecione e copie', cap: ', limitado a ', rec: ' (rec.)', filter: 'filtrar seções…', plan: 'plano ' }
+    };
+    var els = Array.prototype.slice.call(document.querySelectorAll('[data-pt]'));
+    els.forEach(function (el) { el.setAttribute('data-en', el.innerHTML); });
+    var steps = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0], rec = 25, cap = 45, cur = 2;
+    var box = document.getElementById('ladder'), out = document.getElementById('ladder-out');
+
+    function show() {
+      var m = steps[cur], eff = Math.min(cap, rec * m), capped = eff >= cap;
+      var tail = eff.toFixed(0) + 's' + (capped ? '!' : '') + (m !== 1 ? ' manual x' + m : '');
+      out.innerHTML = '<span class="dim">' + rec + 's &times; ' + m + ' = ' + (rec * m).toFixed(0) + 's' +
+        (capped ? T[lang].cap + cap + 's' : '') + ' &nbsp;</span><span class="cad l1">cadence: [L1] week:+33% ' + tail + ' r:wk</span>';
+      Array.prototype.forEach.call(box.children, function (btn, i) { btn.setAttribute('aria-pressed', i === cur ? 'true' : 'false'); });
+    }
+    steps.forEach(function (m, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = 'x' + m + (m === 1 ? T.en.rec : '');
+      b.addEventListener('click', function () { cur = i; show(); });
+      box.appendChild(b);
+    });
+
+    // without vs with pace: illustrative model, deterministic. One work queue drives both runs.
+    // Without pace each interval runs what is queued until the 95% ceiling, then blocks until reset.
+    // With pace each (business) interval runs at most (93% - used) / intervals left, like the 5h axis "needed" rate.
+    var CEIL = 95, TARGET = 93;
+    var MODEL = {
+      // demand swings hard (bursts, then idle valleys); with pace each interval's share only wobbles around the
+      // needed rate (wob), so peaks and valleys stay small. The last interval is forced to 1 to land on the target.
+      '5h': { n: 20, perUnit: 4, demand: [3, 20, 24, 5, 1, 22, 26, 4, 14, 18, 3, 2, 16, 20, 4, 2, 14, 18, 3, 2],
+        wob: [0.6, 1.4, 1.2, 0.8], biz: null, a: 45 },
+      wk: { n: 7, perUnit: 1, demand: [36, 6, 0, 0, 54, 2, 40], wob: [1.25, 0.8, 1, 1, 1.15, 0.85, 1],
+        biz: [1, 1, 0, 0, 1, 1, 1], a: 62 }
+    };
+    var CL = {
+      en: { reset: 'reset', reached: 'ceiling reached', ghost: 'no pace: blocked here', done: 'A done', blk: ['blocked:', 'waits for reset'],
+        burst5: ['burst:', '4 agents at once'], burstWk: ['sprint:', 'parallel agents'], pause: 'pause ≤ 45 s per turn', keeps: 'keeps working, no block',
+        peak: 'peak ', perH: '%/h', perD: '%/day', days: ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'], dayWord: ' days', dec: '.', at: 'at ', on: 'on ',
+        raw: 'Illustrative model, not measured data. Without pace: usage climbs in bursts, reaches the 95% ceiling {t} and stays blocked for {d} until the reset. Task set A finishes {a}.',
+        paced: 'Illustrative model, not measured data. With pace: usage still moves in waves, but small ones; it ends at 93% at the reset, never blocked. Task set A finishes {a}, later than without pace but before the reset.' },
+      pt: { reset: 'reset', reached: 'teto atingido', ghost: 'sem pace: bloqueado aqui', done: 'A pronto', blk: ['bloqueado:', 'esperando o reset'],
+        burst5: ['rajada:', '4 agentes juntos'], burstWk: ['sprint:', 'agentes em paralelo'], pause: 'pausa ≤ 45 s por turno', keeps: 'segue trabalhando, sem bloqueio',
+        peak: 'pico ', perH: '%/h', perD: '%/dia', days: ['Qui', 'Sex', 'Sáb', 'Dom', 'Seg', 'Ter', 'Qua'], dayWord: ' dias', dec: ',', at: 'em ', on: 'na ',
+        raw: 'Modelo ilustrativo, não são dados medidos. Sem pace: o uso sobe em rajadas, atinge o teto de 95% {t} e fica bloqueado por {d} até o reset. O conjunto de tarefas A termina {a}.',
+        paced: 'Modelo ilustrativo, não são dados medidos. Com pace: o uso ainda oscila, mas em ondas pequenas; termina em 93% no reset, sem bloqueio. O conjunto de tarefas A termina {a}, depois do que sem pace, mas antes do reset.' }
+    };
+
+    function cross(pts, v) {
+      for (var k = 1; k < pts.length; k++) {
+        if (pts[k][1] >= v - 1e-9) { var p = pts[k - 1], q = pts[k]; return p[0] + (v - p[1]) / (q[1] - p[1]) * (q[0] - p[0]); }
+      }
+      return null;
+    }
+    function simulate(c) {
+      var raw = { pts: [[0, 0]], rate: [], stall: null }, pac = { pts: [[0, 0]], rate: [] };
+      var used = 0, pu = 0, backlog = 0, bizLeft = 0, i, x, room, w;
+      for (i = 0; i < c.n; i++) { if (!c.biz || c.biz[i]) { bizLeft++; } }
+      for (i = 0; i < c.n; i++) {
+        room = CEIL - used; x = Math.min(c.demand[i], room);
+        if (c.demand[i] > room && raw.stall === null) { raw.stall = i + room / c.demand[i]; raw.pts.push([raw.stall, CEIL]); }
+        used += x; raw.pts.push([i + 1, used]); raw.rate.push(x * c.perUnit);
+        backlog += c.demand[i];
+        w = i === c.n - 1 ? 1 : c.wob[i % c.wob.length];
+        x = (!c.biz || c.biz[i]) ? Math.min(backlog, TARGET - pu, (TARGET - pu) / bizLeft-- * w) : 0;
+        backlog -= x; pu += x; pac.pts.push([i + 1, pu]); pac.rate.push(x * c.perUnit);
+        if (pu > used + 1e-9) { throw new Error('pace model: paced run ahead of the unpaced run'); }
+      }
+      raw.a = cross(raw.pts, c.a); pac.a = cross(pac.pts, c.a);
+      return { raw: raw, pac: pac };
+    }
+
+    var VW = 400, X0 = 36, X1 = 388, YT = 24, YB = 150, R0 = 160, R1 = 186;
+    function sy(v) { return YB - v / 100 * (YB - YT); }
+    function txt(x, y, s, cls, anchor) {
+      return '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '"' + (cls ? ' class="' + cls + '"' : '') + (anchor ? ' text-anchor="' + anchor + '"' : '') + '>' + s + '</text>';
+    }
+    function ln(x1, y1, x2, y2, cls) {
+      return '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" class="' + cls + '"/>';
+    }
+    function when(idx, c, L) {
+      if (c.biz) { return L.days[Math.min(6, Math.max(0, Math.ceil(idx) - 1))]; }
+      var m = Math.round(idx * 5 / c.n * 12) * 5;
+      return Math.floor(m / 60) + ':' + ('0' + m % 60).slice(-2);
+    }
+    function span(idx, c, L) {
+      if (c.biz) { return ((c.n - idx)).toFixed(1).replace('.', L.dec) + L.dayWord; }
+      var m = Math.round((c.n - idx) * 5 / c.n * 12) * 5;
+      return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + m % 60 + ' min' : '');
+    }
+    function chart(c, s, paced, L, maxRate) {
+      var sx = function (idx) { return X0 + idx / c.n * (X1 - X0); };
+      var run = paced ? s.pac : s.raw, o = '', i, cw = sx(1) - sx(0), unit = c.biz ? L.perD : L.perH;
+      for (i = 0; c.biz && i < c.n; i++) { if (!c.biz[i]) { o += '<rect class="wkend" x="' + sx(i).toFixed(1) + '" y="' + YT + '" width="' + cw.toFixed(1) + '" height="' + (R1 - YT) + '"/>'; } }
+      if (!paced && run.stall !== null) { o += '<rect class="stall" x="' + sx(run.stall).toFixed(1) + '" y="' + YT + '" width="' + (X1 - sx(run.stall)).toFixed(1) + '" height="' + (R1 - YT) + '"/>'; }
+      [25, 50, 75].forEach(function (v) { o += ln(X0, sy(v), X1, sy(v), 'grid'); });
+      o += ln(X0, YB, X1, YB, 'ax') + ln(X0, R1, X1, R1, 'ax') + ln(X0, sy(CEIL), X1, sy(CEIL), 'ceil') + ln(X1, YT - 6, X1, R1, 'reset');
+      o += txt(X0 - 4, YB + 4, '0%', 'dim', 'end') + txt(X0 - 4, sy(50) + 4, '50%', 'dim', 'end') + txt(X0 - 4, sy(CEIL) + 4, '95%', 'dim', 'end');
+      o += txt(X1, YT - 10, L.reset + ' ' + (c.biz ? L.days[0] + ' 06:00' : '5:00'), '', 'end');
+      run.rate.forEach(function (r, k) {
+        var h = r / maxRate * (R1 - R0 - 2);
+        if (h > 0) { o += '<rect class="' + (paced ? 'bar-paced' : 'bar-raw') + '" x="' + (sx(k) + 1).toFixed(1) + '" y="' + (R1 - h).toFixed(1) + '" width="' + (cw - 2).toFixed(1) + '" height="' + h.toFixed(1) + '"/>'; }
+      });
+      o += txt(X0 - 4, (R0 + R1) / 2 + 4, unit, 'dim', 'end');
+      var peak = Math.max.apply(null, run.rate);
+      o += txt(X1 - 4, R0 + 9, L.peak + Math.round(peak) + unit, paced ? 'sel' : 'warn', 'end');
+      if (c.biz) {
+        for (i = 0; i < c.n; i++) { o += ln(sx(i), R1, sx(i), R1 + 3, 'ax') + txt(sx(i + 0.5), R1 + 14, L.days[i], c.biz[i] ? '' : 'dim', 'middle'); }
+      } else {
+        for (i = 0; i <= 5; i++) { o += ln(sx(i * 4), R1, sx(i * 4), R1 + 3, 'ax') + txt(sx(i * 4), R1 + 14, i + ' h', '', i === 0 ? 'start' : i === 5 ? 'end' : 'middle'); }
+      }
+      o += '<polyline class="' + (paced ? 'paced' : 'raw') + '" points="' + run.pts.map(function (p) { return sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1); }).join(' ') + '"/>';
+      var ax = sx(run.a), ay = sy(c.a);
+      o += '<circle class="dot" cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" r="3"/>';
+      if (paced) {
+        var gx = sx(s.raw.stall), delta = c.biz ? '' : ' (+' + when(s.pac.a - s.raw.a, c, L) + ')';
+        o += ln(gx, YT - 6, gx, R1, 'ghost') + txt(gx - 3, YT - 10, L.ghost, 'warn', 'end');
+        o += txt(ax - 6, ay - 7, L.done + ' ' + when(run.a, c, L) + delta, '', 'end');
+        o += txt(X0 + 6, sy(80), L.pause, 'sel') + txt(X1 - 6, sy(12), L.keeps, 'sel', 'end');
+      } else {
+        var b = c.biz ? L.burstWk : L.burst5, sx0 = sx(run.stall), cx = (sx0 + X1) / 2;
+        o += txt(sx0 - 3, YT - 10, L.reached + ' ' + when(run.stall, c, L), 'err', 'end');
+        o += c.biz ? txt(ax - 6, ay - 7, L.done + ' ' + when(run.a, c, L), '', 'end')  // week: the stall region starts right there
+                   : txt(ax + 6, ay + 13, L.done + ' ' + when(run.a, c, L));
+        o += txt(X0 + 6, sy(82), b[0], 'warn') + txt(X0 + 6, sy(82) + 13, b[1], 'warn');
+        o += txt(cx, sy(58), L.blk[0], 'err', 'middle') + txt(cx, sy(58) + 13, L.blk[1], 'err', 'middle') + txt(cx, sy(58) + 26, span(run.stall, c, L), 'err', 'middle');
+      }
+      return o;
+    }
+    function renderCmp() {
+      var L = CL[lang];
+      ['5h', 'wk'].forEach(function (w) {
+        var c = MODEL[w], s = simulate(c), prep = c.biz ? L.on : L.at;
+        var maxRate = Math.max(Math.max.apply(null, s.raw.rate), Math.max.apply(null, s.pac.rate));
+        var figRaw = document.getElementById('cmp-raw-' + w), figPac = document.getElementById('cmp-paced-' + w);
+        figRaw.firstElementChild.innerHTML = chart(c, s, false, L, maxRate);
+        figPac.firstElementChild.innerHTML = chart(c, s, true, L, maxRate);
+        figRaw.setAttribute('aria-label', L.raw.replace('{t}', prep + when(s.raw.stall, c, L)).replace('{d}', span(s.raw.stall, c, L)).replace('{a}', prep + when(s.raw.a, c, L)));
+        figPac.setAttribute('aria-label', L.paced.replace('{a}', prep + when(s.pac.a, c, L)));
+      });
+    }
+
+    function setLang(l) {
+      lang = l;
+      document.documentElement.lang = l === 'pt' ? 'pt-BR' : 'en';
+      document.title = T[l].title;
+      els.forEach(function (el) { el.innerHTML = el.getAttribute(l === 'pt' ? 'data-pt' : 'data-en'); });
+      document.querySelectorAll('[data-copy]').forEach(function (b) { b.textContent = T[l].copy; });
+      document.getElementById('filter').placeholder = T[l].filter;
+      document.getElementById('sb-plan').firstChild.nodeValue = T[l].plan;
+      document.getElementById('lang-en').setAttribute('aria-pressed', l === 'en' ? 'true' : 'false');
+      document.getElementById('lang-pt').setAttribute('aria-pressed', l === 'pt' ? 'true' : 'false');
+      try { localStorage.setItem('pace-lang', l); } catch (e) { /* storage unavailable: default stays EN */ }
+      show();
+      renderCmp();
+    }
+    document.getElementById('lang-en').addEventListener('click', function () { setLang('en'); });
+    document.getElementById('lang-pt').addEventListener('click', function () { setLang('pt'); });
+
+    document.querySelectorAll('[data-copy]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var text = b.getAttribute('data-copy');
+        var done = function (msg) { b.textContent = msg; setTimeout(function () { b.textContent = T[lang].copy; }, 1500); };
+        var pick = function () {
+          var r = document.createRange(); r.selectNodeContents(b.previousElementSibling);
+          var s = getSelection(); s.removeAllRanges(); s.addRange(r); done(T[lang].pick);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { done(T[lang].copied); }, pick);
+        } else { pick(); }
+      });
+    });
+
+    // sidebar: filter by name, highlight the section being read
+    var items = Array.prototype.slice.call(document.querySelectorAll('.sb-item'));
+    document.getElementById('filter').addEventListener('input', function (e) {
+      var q = e.target.value.trim().toLowerCase();
+      items.forEach(function (a) { a.hidden = q !== '' && a.textContent.toLowerCase().indexOf(q) === -1; });
+    });
+    var main = document.getElementById('main');
+    var secs = items.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+    function spy() {
+      var top = main.getBoundingClientRect().top + 24, idx = 0;
+      secs.forEach(function (s, i) { if (s && s.getBoundingClientRect().top <= top) { idx = i; } });
+      items.forEach(function (a, i) { a.classList.toggle('is-active', i === idx); });
+    }
+    main.addEventListener('scroll', spy, { passive: true });
+    items.forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        var s = document.getElementById(a.getAttribute('href').slice(1));
+        if (s) { e.preventDefault(); s.scrollIntoView({ block: 'start' }); }
+      });
+    });
+
+    var saved = 'en';
+    try { saved = localStorage.getItem('pace-lang') === 'pt' ? 'pt' : 'en'; } catch (e) { saved = 'en'; }
+    show(); renderCmp(); spy();
+    if (saved === 'pt') { setLang('pt'); }
+  })();
+</script>

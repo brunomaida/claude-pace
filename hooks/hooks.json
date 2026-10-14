@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" enforce || python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" enforce || python -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" enforce || exit 1",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" prompt || python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" prompt || python -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" prompt || exit 1",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-start || python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-start || python -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-start || exit 1",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-done || python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-done || python -S \"${CLAUDE_PLUGIN_ROOT}/scripts/pacing.py\" agent-done || exit 1",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

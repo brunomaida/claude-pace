@@ -1,0 +1,14 @@
+{
+  "name": "claude-pace",
+  "description": "Pacing cadencer for Claude Code: spreads subscription use over the weekly and 5h windows.",
+  "owner": {
+    "name": "brunomaida"
+  },
+  "plugins": [
+    {
+      "name": "pace",
+      "source": "./",
+      "description": "Pacing cadencer: spreads subscription use over the weekly and 5h windows."
+    }
+  ]
+}
