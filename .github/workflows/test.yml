@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ['3.9', '3.12', '3.13']
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,3 +19,23 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Package tests and install simulator
         run: python -m unittest discover -s tests -v
+
+  # Machines with `python3` and no `python`: the shipped hook chain must fall through to `python3`.
+  distros:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12-slim
+            setup: apt-get update -qq && apt-get install -y -qq python3
+          - image: fedora:latest
+            setup: dnf install -y -q python3
+          - image: alpine:latest
+            setup: apk add --no-cache python3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package tests in ${{ matrix.image }}
+        run: >
+          docker run --rm -v "$PWD:/w" -w /w ${{ matrix.image }}
+          sh -c "${{ matrix.setup }} && python3 -m unittest discover -s tests -v"
