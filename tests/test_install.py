@@ -70,9 +70,9 @@ def split_command(template: str):
 def command_for(template: str, launcher: str, shell: str) -> str:
     """Pick, from the shipped command, what a given launcher situation runs.
 
-    chain: as shipped. py -3 / python3 / python: that alternative alone. fallback: the first alternative is an
-    interpreter that does not exist, so `||` must fall through; fallback2: the first two do not exist, so the
-    last one is reached through the chain. absolute: the `python` alternative with this process's absolute
+    chain: as shipped. py -3 / python3 / python: that alternative alone. fallback / fallback2: one / two
+    interpreters that do not exist are put in front of the shipped chain, so `||` must fall through them to the
+    first interpreter this machine has. absolute: the `python` alternative with this process's absolute
     interpreter path (what `pace setup` writes).
     """
     by, tail = split_command(template)
@@ -83,8 +83,7 @@ def command_for(template: str, launcher: str, shell: str) -> str:
     names = list(by)
     if launcher in ('fallback', 'fallback2'):
         missing = 1 if launcher == 'fallback' else 2
-        alts = [f'pace-no-such-python{i}' + by[n][len(n):] for i, n in enumerate(names[:missing])]
-        alts += [by[n] for n in names[missing:]]
+        alts = [f'pace-no-such-python{i} -S pacing.py' for i in range(missing)] + [by[n] for n in by]
         return ' || '.join(alts + tail)
     if launcher == 'absolute':
         exe = sys.executable.replace(chr(92), '/') if shell == 'git-bash' else sys.executable

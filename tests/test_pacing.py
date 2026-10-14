@@ -744,6 +744,13 @@ class Setup(unittest.TestCase):
         self.assertEqual(json.loads(self.settings.read_text(encoding='utf-8')), original)
         self.assertEqual(list(self.cfg_dir.glob('settings.json.pace-backup-*')), [])
 
+    def test_settingsFileMode_isRestoredWithAnIntegerOnPosix(self):
+        (self.cfg_dir / 'settings.json').write_text('{}', encoding='utf-8')
+        with mock.patch.object(pacing.os, 'name', 'posix'), mock.patch.object(pacing.os, 'chmod') as chmod:
+            pacing.cmd_setup(str(self.cfg_dir), pacing.__file__)
+        chmod.assert_called_once()
+        self.assertIsInstance(chmod.call_args.args[1], int)
+
     def test_unwritableDir_returnsAReadableLineInsteadOfATraceback(self):
         with mock.patch.object(pacing.shutil, 'copyfile', side_effect=OSError('disk full')):
             out = self._run()
@@ -994,14 +1001,13 @@ class Guide(unittest.TestCase):
 
     def test_openInBrowser_noDisplay_doesNotSpawnAnything(self):
         env = {k: v for k, v in os.environ.items() if k not in ('DISPLAY', 'WAYLAND_DISPLAY')}
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(pacing.os, 'name', 'posix'), \
-                mock.patch.object(pacing.sys, 'platform', 'linux'), mock.patch('subprocess.Popen') as popen:
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(pacing.sys, 'platform', 'linux'), \
+                mock.patch('subprocess.Popen') as popen:
             self.assertFalse(pacing._open_in_browser('/x/manual.html'))
         popen.assert_not_called()
 
     def test_openInBrowser_withDisplay_detachesFromTheHookStreams(self):
-        with mock.patch.dict(os.environ, {'DISPLAY': ':0'}), mock.patch.object(pacing.os, 'name', 'posix'), \
-                mock.patch.object(pacing.sys, 'platform', 'linux'), \
+        with mock.patch.dict(os.environ, {'DISPLAY': ':0'}), mock.patch.object(pacing.sys, 'platform', 'linux'), \
                 mock.patch.object(pacing.shutil, 'which', return_value='/usr/bin/xdg-open'), \
                 mock.patch('subprocess.Popen') as popen:
             self.assertTrue(pacing._open_in_browser('/x/manual.html'))
@@ -1010,11 +1016,12 @@ class Guide(unittest.TestCase):
         self.assertTrue(kw['start_new_session'])
 
     def test_openInBrowser_macos_passesAFileUriSoTheDefaultBrowserOpensIt(self):
-        with mock.patch.object(pacing.os, 'name', 'posix'), mock.patch.object(pacing.sys, 'platform', 'darwin'), \
+        manual = str(Path(self.tmp.name) / 'manual.html')
+        with mock.patch.object(pacing.sys, 'platform', 'darwin'), \
                 mock.patch.object(pacing.shutil, 'which', return_value='/usr/bin/open'), \
                 mock.patch('subprocess.Popen') as popen:
-            self.assertTrue(pacing._open_in_browser('/x/manual.html'))
-        self.assertEqual(popen.call_args.args[0], ['open', 'file:///x/manual.html'])
+            self.assertTrue(pacing._open_in_browser(manual))
+        self.assertEqual(popen.call_args.args[0], ['open', Path(manual).as_uri()])
 
     def test_ctlFailure_isFailOpenSoTheChainDoesNotReRunIt(self):
         env = {'CLAUDE_PACING_DIR': self.tmp.name, 'CLAUDE_PACING_CONFIG': self.env['CLAUDE_PACING_CONFIG']}

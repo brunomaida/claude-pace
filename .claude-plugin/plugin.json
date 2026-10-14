@@ -1,6 +1,6 @@
 {
   "name": "pace",
-  "version": "0.9",
+  "version": "0.10",
   "description": "Spread Claude Code subscription use over the week and the 5h window by adding small delays to tool calls and capping concurrent subagents. Observe-only until you turn it on.",
   "author": {
     "name": "brunomaida"

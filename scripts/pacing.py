@@ -29,7 +29,7 @@ import datetime, filecmp, glob, json, os, pathlib, re, shutil, sys, tempfile, ti
 
 # Version of pace itself, not a roadmap phase: every change or request adds 1 to the minor counter (0.1, 0.2, ...
 # 0.9, 0.10); the major moves only on an explicit release or macro request. The manual's brand tag must match.
-VERSION = '0.9'
+VERSION = '0.10'
 
 DEFAULTS = {
     'ceiling_pct': 95,                  # share of the weekly quota the budget may reach (5% reserve)
@@ -1012,7 +1012,7 @@ def _open_in_browser(path: str) -> bool:
     Console browsers and a missing display are left alone: a hook has 5 s and its stdout carries JSON."""
     try:
         import subprocess  # only `/pace guide` needs it; the hot hook paths do not pay for the import
-        if os.name == 'nt':
+        if sys.platform == 'win32':
             os.startfile(path)  # type: ignore[attr-defined]
             return True
         if sys.platform == 'darwin':
@@ -1079,8 +1079,8 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
         if found and os.path.normcase(os.path.realpath(found)) == os.path.normcase(os.path.realpath(sys.executable)):
             py = name
             break
-    mode = '--record-only' if silent else '--full --standalone'
-    command = f'{py} -S "{_dq(posix(target))}" statusline {mode}'
+    flags = '--record-only' if silent else '--full --standalone'  # not `mode`: that name holds the file mode
+    command = f'{py} -S "{_dq(posix(target))}" statusline {flags}'
     cur = conf.get('statusLine')
     cur_cmd = str(cur.get('command', '')) if isinstance(cur, dict) else ''
     is_pace = 'pacing.py' in cur_cmd and 'statusline' in cur_cmd
