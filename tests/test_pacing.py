@@ -1245,6 +1245,50 @@ class Brief(unittest.TestCase):
         self.assertEqual(pacing.apply_ctl('brief', c, CFG)['step'], 3)
 
 
+class SummaryLine(unittest.TestCase):
+    """`template after`: one line, same vocabulary as the `cadence:` segment, printed after the user's lines."""
+    _dec = Brief._dec
+    _ctl = Brief._ctl
+
+    def _line(self, dec=None, ctl=None):
+        return pacing.format_line(dec or self._dec(), self._ctl() if ctl is None else ctl, CFG, NOW)
+
+    def test_h5ActingWeekMeasuring_showsBothBlocks(self):
+        self.assertEqual(self._line(), 'pace [L1] 5h:24% 18>21%/h reset 1h50m | wk:45% 2%/h -25%')
+
+    def test_behindOnBoth_showsCutsAndTheWeeklyDeviation(self):
+        dec = self._dec(lead=8.0, deficit5=2.0, now_rate5=44.0, need_rate5=18.0, reduce5_pct=59, u5=31, u7=41,
+                        now_rate=4.0, need_rate=3.0)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))),
+                         'pace [L1] 5h:31% 44>18%/h cut 59% reset 1h50m | wk:41% 4>3%/h cut 10% +8%')
+
+    def test_leadInsideTheDeadband_isLeftOut(self):
+        dec = self._dec(lead=-2.0, deficit5=2.0, now_rate5=44.0, need_rate5=18.0, reduce5_pct=59, u5=31, u7=41,
+                        now_rate=4.2, reduce_pct=0)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))),
+                         'pace [L1] 5h:31% 44>18%/h cut 59% reset 1h50m | wk:41% 4%/h')
+
+    def test_level3_hasNoRateAndNoCut(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))), 'pace [L3] 5h:97% reset 12m | wk:45% -25%')
+
+    def test_axisWithBothOffIsLeftOut(self):
+        self.assertEqual(self._line(ctl=self._ctl(wk=(False, False))), 'pace [L1] 5h:24% 18>21%/h reset 1h50m')
+
+    def test_nothingEngaged_isTheTagOnly(self):
+        self.assertEqual(self._line(self._dec(state='ok', level=0, lead=0.0), {}), 'pace [off]')
+
+    def test_noSample_saysSoWithTheSegmentTag(self):
+        self.assertEqual(self._line({'state': 'na'}, self._ctl()), 'pace [n/a] no usage sample yet')
+        self.assertEqual(self._line({'state': 'na'}, {}), 'pace [off] no usage sample yet')
+
+    def test_partialDecision_neverRaises(self):
+        self.assertEqual(self._line({'state': 'L1'}, self._ctl()), 'pace [off]')
+
+    def test_isOneLine(self):
+        self.assertNotIn('\n', self._line())
+
+
 class Cli(unittest.TestCase):
     """Process-level checks: default OFF, fail-open, zero output when idle."""
 

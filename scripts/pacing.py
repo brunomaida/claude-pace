@@ -469,6 +469,37 @@ def format_brief(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) -
     return '\n'.join(lines)
 
 
+def format_line(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) -> str:
+    """One line for `template after`: the state tag, then a 5h and a week block for the observed axes."""
+    try:
+        c = norm_ctl(ctl)
+        f = cadence_fields(dec, c, cfg, now, active)
+        head = 'pace ' + f['tag']
+        if dec.get('state') in ('na', 'stale'):
+            return head + ' no usage sample yet'
+        blocks = []
+        for ax, label, used_k, reset_k in (('h5', '5h', 'u5', 'r5'), ('wk', 'wk', 'u7', None)):
+            if not (c[ax]['on'] or c[ax]['measure']):
+                continue
+            items = []
+            if dec.get(used_k) is not None:
+                items.append(f'{dec[used_k]:.0f}%')
+            if f[ax]:
+                rate, cut = f[ax]
+                items.append(f'{rate}%/h')
+                if cut:
+                    items.append('cut ' + cut.lstrip('-'))
+            if ax == 'wk' and f['lead']:
+                items.append(f['lead'])
+            if reset_k and dec.get(reset_k):
+                items.append('reset ' + fmt_left(max(0, dec[reset_k] - now), True))
+            if items:
+                blocks.append(f'{label}:' + ' '.join(items))
+        return head + (' ' + ' | '.join(blocks) if blocks else '')
+    except (KeyError, TypeError, ValueError):
+        return 'pace [off]'
+
+
 # ---- status line templates ------------------------------------------------
 
 def template_of(ctl: dict) -> str:
