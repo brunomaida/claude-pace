@@ -24,7 +24,7 @@ Decisions with lasting consequences for the `pace` plugin. Where each lives in t
 
 ## D4: Hot state is volatile, user choices are persistent
 
-#2026-10-14 D4: W: samples and decisions are rewritten many times a minute and go stale fast D: keep them in the temp directory; keep config and first-use marker under the Claude config directory I: switches and template reset when temp is cleaned; the first-use marker survives
+#2026-10-14 D4: W: samples and decisions are rewritten many times a minute and go stale fast D: keep them in the temp directory; keep config under the Claude config directory I: switches and template reset when temp is cleaned; config survives
 
 ## D5: A plugin cannot ship a status line, /pace setup writes it
 
@@ -32,7 +32,7 @@ Decisions with lasting consequences for the `pace` plugin. Where each lives in t
 
 ## D6: template after is a value that template_of never returns
 
-#2026-10-15 D6: W: add one summary line after the user's own status line without touching callers of the layout API D: ctl template accepts AFTER; template_of still returns only L1, L2, C1, C2; statusline --full --after opts into a new \x02 payload I: scripts without --after are unaffected; the user's script must read the first byte of the reply
+#2026-10-15 D6: W: add one summary line after the user's own status line without touching callers of the layout API D: ctl template accepts AFTER; template_of still returns only L1, L2, C1, C2; statusline --full --after opts into a new \x02 payload I: scripts without --after are unaffected; the user's script must read the first byte of the reply; the first-use marker lives under the config directory because the state directory is volatile
 
 ## D7: State directory is per user and validated on every use
 
