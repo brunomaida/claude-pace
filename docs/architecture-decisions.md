@@ -10,9 +10,11 @@ created: 2026-10-15
 
 Decisions with lasting consequences for the `pace` plugin. Where each lives in the code: [TOPOLOGY.md](TOPOLOGY.md). Security consequences: [SECURITY.md](../SECURITY.md).
 
+Entry format: `W` is why, `D` is the decision, `I` is the impact.
+
 ## D1: Every failure is fail-open
 
-#2026-10-14 D1: W: a pacing hook that errors or hangs breaks the user's session, worse than no pacing D: every failure exits 0 with no output; one delay never exceeds cap_s, kept under the hook timeout I: a bug degrades to no pacing; explicit ctl commands still print their failure
+#2026-10-14 D1: W: a pacing hook that errors or hangs breaks the user's session, worse than no pacing D: every failure inside pacing.py exits 0; the plain statusline falls back to a cadence segment of off; one delay never exceeds cap_s, kept under the hook timeout I: a bug degrades to no pacing; explicit ctl commands still print their failure; a missing interpreter is not covered (the hook chain ends in exit 1)
 
 ## D2: Default is observe-only
 
@@ -20,7 +22,7 @@ Decisions with lasting consequences for the `pace` plugin. Where each lives in t
 
 ## D3: One Python file, standard library only, 3.9 to 3.14
 
-#2026-10-14 D3: W: hook command runs on every tool call on three operating systems with unknown Python setups D: single scripts/pacing.py, stdlib only, no match statement, no runtime X | Y I: no install step; CI matrix has to cover 3.9 to 3.14 and the hook chain falls through py -3, python3, python
+#2026-10-14 D3: W: hook command runs on every tool call on three operating systems with unknown Python setups D: single scripts/pacing.py, stdlib only, no match statement, no runtime X | Y I: no install step; CI matrix has to cover 3.9 to 3.14 and the hook chain falls through py -3, python3, python under sh and Git Bash (not under PowerShell)
 
 ## D4: Hot state is volatile, user choices are persistent
 
@@ -36,11 +38,11 @@ Decisions with lasting consequences for the `pace` plugin. Where each lives in t
 
 ## D7: State directory is per user and validated on every use
 
-#2026-10-15 D7: W: shared predictable name plus a predictable temp file let a local user redirect a write through a link D: per-user claude-pacing-<uid> directory on POSIX, mode 0700, owner and type checked on each use, exclusive 0600 temp files I: a directory owned by someone else is refused and pace does nothing; upgrading from 0.13 resets the switches once
+#2026-10-15 D7: W: shared predictable name plus a predictable temp file let a local user redirect a write through a link D: per-user claude-pacing-<uid> directory on POSIX, mode 0700, owner and type checked on each use, exclusive 0600 temp files I: a directory owned by someone else is refused and pace does nothing; upgrading from 0.13 on Linux and macOS resets the switches once
 
 ## D8: allowed-tools rules are anchored to a script path
 
-#2026-10-15 D8: W: a wide wildcard let a -c flag be the first character of the quoted argument D: the quoted path must start with / or a drive letter and a colon I: any file whose path ends in pacing.py still matches; whether the host splits commands before matching is not tested here
+#2026-10-15 D8: W: a wide wildcard let a -c flag be the first character of the quoted argument D: the quoted path must start with / or with a character and a colon (a Windows drive) I: any file whose path ends in pacing.py still matches; whether the host splits commands before matching is not tested here
 
 ---
 

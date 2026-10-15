@@ -16,7 +16,7 @@ How the `pace` plugin is put together. Decisions behind it: [architecture-decisi
 |---|---|
 | `.claude-plugin/plugin.json` | plugin manifest: name `pace`, version, license, repository |
 | `.claude-plugin/marketplace.json` | one-plugin marketplace, so the same repo is installed with `/plugin marketplace add` |
-| `hooks/hooks.json` | registers four hooks (`PreToolUse`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`); each tries `py -3`, `python3`, `python` in that order |
+| `hooks/hooks.json` | registers four hooks (`PreToolUse`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`); each tries `py -3`, `python3`, `python` in that order under `sh` and Git Bash (not under PowerShell) |
 | `commands/pace.md` | the `/pace` slash command: runs `pacing.py ctl $ARGUMENTS`; `allowed-tools` rules are anchored to the script path |
 | `scripts/pacing.py` | the whole runtime in one file: decision engine, state files, `ctl` CLI, status line rendering, `setup` |
 | `docs/pacing-cadencer-readme.html` | the manual opened by `/pace guide` |
@@ -29,10 +29,13 @@ How the `pace` plugin is put together. Decisions behind it: [architecture-decisi
 | Data | Where | Lifetime |
 |---|---|---|
 | samples, decision, subagent slots, on/off switches, template | `%TEMP%\claude-pacing` on Windows; `claude-pacing-<uid>` (mode 0700) in the temp directory on Linux and macOS | volatile |
-| config keys | `~/.claude/config/pacing.config.json` (or `CLAUDE_PACING_CONFIG`) | persistent, optional |
+| config keys | `~/.claude/config/pacing.config.json` (or the file named by `CLAUDE_PACING_CONFIG`) | persistent, optional |
 | first-use marker | `~/.claude/config/pacing.welcomed` | persistent |
 | stable copy of the script for the status line | `~/.claude/pace/pacing.py` | refreshed on the next prompt after a plugin update |
-| `statusLine` entry | `~/.claude/settings.json`, written by `/pace setup` (backup first) | stays after uninstall until removed by hand |
+| `statusLine` entry | `~/.claude/settings.json`, written by `/pace setup` | stays after uninstall until removed by hand |
+| settings backup | `~/.claude/settings.json.pace-backup-<time>`, written by `/pace setup` | persistent |
+
+`CLAUDE_CONFIG_DIR` moves every `~/.claude` row and `CLAUDE_PACING_DIR` moves the state directory; see [SECURITY.md](../SECURITY.md).
 
 ## Dependency Direction Graph
 
@@ -41,13 +44,13 @@ Claude Code host
   │  hook events (PreToolUse, UserPromptSubmit, SubagentStart, SubagentStop)
   ▼
 hooks/hooks.json ──► scripts/pacing.py ◄── commands/pace.md  (/pace → ctl)
-                        │      ▲
-        statusLine JSON │      │ pace template / setup
-        (rate_limits)   ▼      │
-              ~/.claude/pace/pacing.py ── status line ── user's own script
-                        │
-                        ▼
-              temp state dir  ·  ~/.claude/config/
+                        │      │
+   /pace setup, refresh │      │ reads and writes
+   on each prompt       ▼      ▼
+   ~/.claude/pace/pacing.py   temp state dir  ·  ~/.claude/config/
+                        ▲
+   statusLine JSON      │  the host runs it as the status line command,
+   (rate_limits) ───────┘  next to the user's own script
 ```
 
 `scripts/pacing.py` imports only the Python standard library. Nothing else in the repo is imported by it.

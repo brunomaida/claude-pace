@@ -7,8 +7,8 @@ How pace got from 0.9 to 0.14: what shipped, what review found, what was fixed, 
 | Date | Version | Change | Where |
 |---|---|---|---|
 | 2026-10-14 | 0.9 | Initial release: observe-only pacing of tool calls and subagent slots, `/pace` command, status line | `ce6e221` |
-| 2026-10-14 | 0.10 | `pace setup` crash on macOS and Linux fixed, tests made platform-neutral | `7008fa7`, `9232870`, tag `v0.10` |
-| 2026-10-14 | 0.11 | `allowed-tools` rules matched to the quoted script path, CI matrix widened, matrix results and the PowerShell limit documented | `e57713f`, `3261031` |
+| 2026-10-14 | 0.10 | `pace setup` crash on macOS and Linux fixed, tests made platform-neutral, matrix results and the PowerShell limit documented | `7008fa7`, `9232870`, `3261031`, tag `v0.10` |
+| 2026-10-14 | 0.11 | `allowed-tools` rules matched to the quoted script path, CI matrix widened | `e57713f` |
 | 2026-10-14 | 0.12 | Tune panel table shown, manual charset declared, host checks documented | `1b968e7`, tag `v0.12` |
 | 2026-10-15 | 0.12 | README intro replaced with benefit bullets and a before/after figure | PR #3 |
 | 2026-10-15 | 0.13 | `template after` (one summary line after your own status line) and a one-time first-use menu | issue #1, PR #2 |
@@ -34,7 +34,7 @@ Significant changes were reviewed read-only at the Opus tier, with the instructi
 |---|---|---|
 | High | Shared `/tmp/claude-pacing` plus a predictable `.<pid>.tmp` name: a local user could redirect a write through a symlink (Linux) | Fixed: per-user directory, validated on every use, exclusive 0600 temp file |
 | Medium | A decision file dated in the future could force or hold a pause | Fixed: future-dated decisions and slots are ignored |
-| Medium | Wide `*` in `allowed-tools` | Narrowed twice; anchored to a path starting at `/` or at a drive letter. Any file whose path ends in `pacing.py` still matches (documented) |
+| Medium | Wide `*` in `allowed-tools` | Narrowed twice; anchored to a path starting at `/` or at a character and a colon (a Windows drive). Any file whose path ends in `pacing.py` still matches (documented) |
 | Low | Escape sequences reachable through decision fields and rate keys | Fixed: state whitelist, numeric and finite checks, keys re-rendered |
 | Low | `settings.json` temp file mode, clock skew, readable data | Fixed or documented in `SECURITY.md` |
 | Info | `_dq` quoting on Windows | `/pace setup` refuses a path it cannot quote |
@@ -63,6 +63,6 @@ Significant changes were reviewed read-only at the Opus tier, with the instructi
 
 ## Process
 
-- Each change went through a written spec and plan where it altered behaviour, then issue, branch, pull request, CI, merge.
+- 0.9 to 0.12 are direct commits. From 0.13 on, changes went through a branch, pull request, CI and merge; behaviour changes had an issue (#1, #4), and 0.13 had a written spec and plan.
 - Security-relevant branches were reviewed at a tier at or above the one that wrote the code.
 - Private vulnerability reporting is on for the repository; see [SECURITY.md](../SECURITY.md).

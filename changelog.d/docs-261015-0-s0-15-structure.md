@@ -2,12 +2,12 @@
 
 #### Added
 - `docs/TOPOLOGY.md`: components, runtime data and dependency direction of the plugin.
-- `docs/architecture-decisions.md`: eight decisions already documented in the specs, plans and track record (D1 to D8).
+- `docs/architecture-decisions.md`: eight decisions drawn from the `pacing.py` docstring, the README, `SECURITY.md` and the 0.13 spec (D1 to D8).
 
 #### Changed
 - `README.md`: one-line goal statement under the title.
-- `docs/track-record.md`: the process note no longer points at an unpublished path.
-- `.gitignore`: process docs (specs, plans, text-specs, roadmap, index) and local agent files are no longer published; the two S0.13 documents are removed from the index and stay in history.
+- `docs/track-record.md`: `3261031` moved to the 0.10 row (it is the commit of tag `v0.10`), the process note states what each version went through, the `allowed-tools` anchor is described as a character and a colon.
+- `.gitignore`: process docs (specs, plans, text-specs, roadmap, index) and local agent files are no longer published; the two 0.13 documents are removed from the index and stay in history.
 
 #### Perf
 - Perf: none — documentation only, no runtime code.

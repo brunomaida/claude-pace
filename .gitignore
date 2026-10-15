@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 .superpowers/
 
-# Process docs and local agent files: read by Atlas from disk, not published
+# Local process docs and agent files, not published
 docs/text-specs/
 docs/superpowers/
 docs/roadmap.md
