@@ -72,8 +72,10 @@ WELCOME_MENU = '\n'.join((
     '  /pace template L2      ready layout (L1 L2 C1 C2)',
     '  /pace template off     keep your status line as it is',
     '  /pace template after   add one summary line after yours'))
-AFTER_NOTE = ('pace template after: pass --after to `statusline --full` in your script and, when the output '
-              'starts with \\x02, print the rest after your own lines. Until then nothing changes.')
+AFTER_NOTE = ('pace template after: call `statusline --full --after` in your script (plain `statusline` ignores '
+              'the flag). Its first byte says what follows: \\x02 = one line to print after your own lines, '
+              '\\x01 = the cadence segment, anything else = a whole layout to print as it is. '
+              'Until then nothing changes.')
 _DEFAULT_STATE = os.path.join(tempfile.gettempdir(), 'claude-pacing')
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
 
@@ -1147,6 +1149,8 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
         else:
             out.append(f'To add the pace segment, feed it the same stdin JSON: {py} -S "{posix(target)}" statusline '
                        '(prints `cadence: ...`).')
+            out.append('To show one summary line after your own lines instead, run /pace template after and '
+                       'follow the note it prints.')
     else:
         backup = None
         if os.path.exists(settings):

@@ -33,7 +33,7 @@ Then, once:
 
 Axes start OFF (observe only). `/pace on` turns both on; `/pace wk on` and `/pace 5h on` turn one.
 
-The first `/pace` after install prints a one-time menu with the three status line choices: a ready layout, keep yours (`/pace template off`), or one summary line after yours (`/pace template after`). `after` needs one change in your script: pass `--after` to `statusline --full` and print what follows a leading `\x02` after your own lines. A script that does not pass `--after` is unaffected.
+The first `/pace` command after install (other than `setup` and `template`) prints a one-time menu with the three status line choices: a ready layout, keep yours (`/pace template off`), or one summary line after yours (`/pace template after`). `/pace setup` on a status line of your own points at `after` too. `after` needs your script to call `statusline --full --after` and look at the first byte of the reply: `\x02` is one line to print after your own lines, `\x01` is the cadence segment, anything else is a whole layout to print as it is. A script that does not pass `--after` is unaffected.
 
 ## Commands
 

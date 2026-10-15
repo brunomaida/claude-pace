@@ -806,6 +806,14 @@ class Setup(unittest.TestCase):
         self.assertIn('pace setup:', out['reason'])
         self.assertTrue((self.cfg_dir / 'settings.json').exists())
 
+    def test_keptStatusLine_pointsAtTemplateAfter(self):
+        mine = {'statusLine': {'type': 'command', 'command': 'bash my-line.sh'}}
+        self.settings.write_text(json.dumps(mine), encoding='utf-8')
+        out = self._run()
+        self.assertIn('statusLine kept', out)
+        self.assertIn('/pace template after', out)
+        self.assertEqual(json.loads(self.settings.read_text(encoding='utf-8')), mine)
+
     def test_configDir_followsTheEnvironment(self):
         with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.cfg_dir)}):
             self.assertEqual(pacing.config_dir(), str(self.cfg_dir))
@@ -1393,8 +1401,9 @@ class FirstUse(unittest.TestCase):
 
     def test_afterCommand_printsTheScriptNote(self):
         reason = self._reason('/pace template after')
-        self.assertIn('--after', reason)
-        self.assertIn('x02', reason)
+        self.assertIn('statusline --full --after', reason)  # plain `statusline` ignores the flag
+        for mark in ('x02', 'x01'):  # a script must handle every reply `--full` can give
+            self.assertIn(mark, reason)
         self.assertNotIn('first use', reason)
 
     def test_ctlPath_showsTheMenuOnceToo(self):
