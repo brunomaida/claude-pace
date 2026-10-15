@@ -104,7 +104,7 @@ After setting `AFTER`, the command prints the one change the script needs: pass 
 - `README.md`: Commands table row for `template`, first-use note.
 - `docs/pacing-cadencer-readme.html`: the `template` row and the Status line section, EN + PT (`data-pt`).
 - `commands/pace.md`: description and `argument-hint` gain `after`.
-- `VERSION` 0.13; manual version badge.
+- 0.13 in `scripts/pacing.py` (`VERSION`), `.claude-plugin/plugin.json` and the manual version badge.
 
 ## Out of scope
 
