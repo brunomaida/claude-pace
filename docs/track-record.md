@@ -63,6 +63,6 @@ Significant changes were reviewed read-only at the Opus tier, with the instructi
 
 ## Process
 
-- Each change went through a written spec and plan where it altered behaviour (`docs/superpowers/`), then issue, branch, pull request, CI, merge.
+- Each change went through a written spec and plan where it altered behaviour, then issue, branch, pull request, CI, merge.
 - Security-relevant branches were reviewed at a tier at or above the one that wrote the code.
 - Private vulnerability reporting is on for the repository; see [SECURITY.md](../SECURITY.md).
