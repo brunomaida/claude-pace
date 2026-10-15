@@ -1561,6 +1561,72 @@ class Hardening(unittest.TestCase):
         self.assertTrue(any(n.startswith('slept.x.') for n in names), names)
         self.assertFalse(any('evil' in n for n in names), names)
 
+    @staticmethod
+    @contextlib.contextmanager
+    def _posix(uid=None):
+        """Run the POSIX branch of the directory checks anywhere: on Windows st_uid is 0, so uid defaults to it."""
+        uid = uid if uid is not None else (os.getuid() if hasattr(os, 'getuid') else 0)
+        with mock.patch.object(os, 'name', 'posix'), mock.patch.object(os, 'getuid', create=True, return_value=uid):
+            yield
+
+    def test_stateDir_isCreatedEvenForAReader(self):
+        d = os.path.join(self.sd, 'not-yet')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': d}), self._posix():
+            pacing.state_dir()
+        self.assertTrue(os.path.isdir(d))
+
+    def test_stateDir_refusesADirOfAnotherOwner(self):
+        other = (os.getuid() + 1) if hasattr(os, 'getuid') else 1
+        with self._posix(uid=other):
+            with self.assertRaises(PermissionError):
+                pacing.state_dir()
+
+    def test_stateDir_aPlantedFileIsAPermissionErrorNotAFileExistsError(self):
+        planted = os.path.join(self.sd, 'afile')
+        Path(planted).write_text('x', encoding='utf-8')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': planted}), self._posix():
+            with self.assertRaises(PermissionError):
+                pacing.state_dir(create=True)
+
+    def test_stateDir_anOverrideIsValidatedButNeverChmodded(self):
+        with self._posix(), mock.patch.object(os, 'chmod') as chmod:
+            pacing.state_dir()
+        chmod.assert_not_called()
+
+    def test_stateDir_theDefaultIsTightenedWhenLoose(self):
+        with mock.patch.object(pacing, '_DEFAULT_STATE', self.sd), \
+                mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': ''}), self._posix():
+            with mock.patch.object(os, 'chmod') as chmod, \
+                    mock.patch.object(os, 'lstat', return_value=types.SimpleNamespace(
+                        st_mode=stat.S_IFDIR | 0o755, st_uid=os.getuid() if hasattr(os, 'getuid') else 0)):
+                pacing.state_dir()
+        chmod.assert_called_once_with(self.sd, 0o700)
+
+    def test_prompt_refreshesTheStableCopyEvenWhenTheStateDirIsRefused(self):
+        cfg = Path(self.sd) / 'cfg'
+        (cfg / 'pace').mkdir(parents=True)
+        stable = cfg / 'pace' / 'pacing.py'
+        stable.write_text('# old version', encoding='utf-8')
+        bad = Path(self.sd) / 'afile'
+        bad.write_text('x', encoding='utf-8')
+        env = {'CLAUDE_CONFIG_DIR': str(cfg), 'CLAUDE_PACING_DIR': str(bad)}
+        with mock.patch.dict(os.environ, env), self._posix():
+            with self.assertRaises(OSError):
+                pacing.cmd_prompt({'prompt': '/pace status'}, CFG, NOW)
+        self.assertEqual(stable.read_bytes(), Path(pacing.__file__).read_bytes())
+
+    def test_readDecision_dropsADecisionWithANonNumericField(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1,
+                                      'reduce_pct': '\x1b]52;c;AA\x07'})
+        self.assertIsNone(pacing._read_decision(self.sd, self.T0))
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1, 'reduce_pct': 10, 'r5': None,
+                                      'lead': -2.5})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['reduce_pct'], 10)
+
+    def test_readDecision_keepsTheRateKeysOfAFractionalWindow(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'7.5': 1.0, '10': 2.0}})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'7.5': 1.0, '10': 2.0})
+
     @unittest.skipUnless(os.name == 'nt', 'POSIX paths are escaped; only Windows paths are refused')
     def test_setup_refusesAPathItCannotQuote(self):
         cfg = Path(self.sd) / 'a$b'

@@ -84,7 +84,7 @@ The full list is `DEFAULTS` at the top of `scripts/pacing.py`.
 
 ## Updating and removing
 
-After a plugin update, pace refreshes the copy of the script that the status line runs on your next prompt, so there is nothing to redo.
+After a plugin update, pace refreshes the copy of the script that the status line runs on your next prompt, so there is nothing to redo. Version 0.14 moves the state to a private per-user directory on Linux and macOS: run `/pace on` again once.
 
 To remove it:
 

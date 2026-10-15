@@ -22,7 +22,7 @@ Subcommands (stdin = hook / statusLine JSON):
 Two independent axes, weekly (wk) and 5h, each with `measure` (show the rate and the proposed reduction) and
 `on` (apply it); the statusline ends with `r:<acting axes>|off`. Default is all OFF: with no ctl file
 `enforce` exits at once. Every failure is fail-open (exit 0, no output).
-State is volatile (%TEMP%/claude-pacing); samples are kept for the longest window plus `stale_s`, so the
+State is volatile (%TEMP%/claude-pacing; claude-pacing-<uid>, mode 0700, on POSIX); samples are kept for the longest window plus `stale_s`, so the
 u5 envelope has a fresh reading before the oldest window starts.
 Unit: every `%` is an absolute share of the weekly quota (71% used - 38% budget = +33%).
 """
@@ -82,6 +82,9 @@ _DEFAULT_STATE = os.path.join(tempfile.gettempdir(),
 STATES = ('na', 'stale', 'ok', 'L1', 'L2', 'L3')  # the only values `decide` writes as `state`
 FUTURE_SKEW_S = 60                  # how far ahead of `now` a state file's timestamp may be before it is ignored
 _SID_RE = re.compile(r'[A-Za-z0-9_-]{1,64}')
+_DECISION_NUMBERS = ('u5', 'u7', 'r5', 'r7', 'level', 'delay_rec', 'lead', 'allow_day', 'deficit', 'now_rate',
+                     'need_rate', 'reduce_pct', 'cap_ticks', 'last_cap_ts', 'delay_wk', 'delay_5h', 'deficit5',
+                     'need_rate5', 'now_rate5', 'reduce5_pct', 'mult')  # every numeric field `decide` writes
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
 
 
@@ -112,20 +115,23 @@ def _dir_problem(st, uid: int) -> str:
 
 
 def state_dir(create: bool = False) -> str:
-    """The state directory. On POSIX it must be the caller's own real directory: a loose mode is tightened to
-    0700, anything else raises PermissionError, which every caller turns into fail-open."""
-    d = os.environ.get('CLAUDE_PACING_DIR') or _DEFAULT_STATE
-    if create:
-        os.makedirs(d, mode=0o700, exist_ok=True)
-    if os.name != 'nt':
+    """The state directory. On POSIX it is created 0700 even for a reader and must be the caller's own real
+    directory: anything else raises PermissionError, which every caller turns into fail-open. A loose mode is
+    tightened on the default directory only; one named by CLAUDE_PACING_DIR is the user's to manage."""
+    override = os.environ.get('CLAUDE_PACING_DIR')
+    d = override or _DEFAULT_STATE
+    posix = os.name != 'nt'
+    if create or posix:
         try:
-            st = os.lstat(d)
-        except FileNotFoundError:
-            return d  # nothing there yet: readers see an empty state
+            os.makedirs(d, mode=0o700, exist_ok=True)
+        except FileExistsError:
+            pass  # a file or a dangling link where the directory should be: refused just below
+    if posix:
+        st = os.lstat(d)
         why = _dir_problem(st, os.getuid())
         if why:
             raise PermissionError(f'unsafe state dir {d}: {why}')
-        if st.st_mode & 0o077:
+        if st.st_mode & 0o077 and not override:
             os.chmod(d, 0o700)
     return d
 
@@ -190,12 +196,16 @@ def _read_decision(sd: str, now: float):
         return None
     if dec.get('state', 'na') not in STATES:
         return None
+    for key in _DECISION_NUMBERS:  # printed raw by `format_status`: a string here could carry escape codes
+        v = dec.get(key)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
+            return None
     for key in ('rates', 'rates5'):
         table = dec.get(key)
         if table is None:
             continue
         try:
-            dec[key] = {str(int(k)): float(v) for k, v in table.items()}
+            dec[key] = {str(k): float(v) for k, v in table.items() if float(k) is not None}
         except (AttributeError, TypeError, ValueError):
             del dec[key]
     return dec
@@ -1194,21 +1204,24 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
         if not isinstance(conf, dict):
             return '\n'.join(out + [f'{posix(settings)} is not a JSON object: left untouched.'])
     target = _stable_target(cfg_dir, src)
-    if os.name == 'nt' and re.search(r'[$`"]', posix(target) + posix(sys.executable)):
-        # Git Bash and PowerShell both expand `$` and a backtick inside double quotes, and they escape them
-        # differently: one quoting cannot be right for both, so the entry is not written.
-        return '\n'.join(out + [f'cannot quote {posix(target)} safely for the status line (it contains $, a '
-                                'backtick or a double quote): move the config dir or Python, then run '
-                                '/pace setup again.'])
-    if os.path.normcase(target) != os.path.normcase(src):
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copyfile(src, target)
     py = f'"{_dq(posix(sys.executable))}"'  # an absolute path is the only name that always resolves
     for name in ('python', 'python3'):  # a bare name also parses in PowerShell, where a quoted word does not run
         found = shutil.which(name)
         if found and os.path.normcase(os.path.realpath(found)) == os.path.normcase(os.path.realpath(sys.executable)):
             py = name
             break
+    if os.name == 'nt':
+        # Git Bash and PowerShell both expand `$` and a backtick inside double quotes, and they escape them
+        # differently: one quoting cannot be right for both, so the entry is not written. Only the paths that
+        # enter the command count: a bare `python` name does not.
+        quoted = [target] + ([sys.executable] if py.startswith('"') else [])
+        bad = next((p for p in quoted if re.search(r'[$`"]', posix(p))), None)
+        if bad:
+            return '\n'.join(out + [f'cannot quote {posix(bad)} safely for the status line (it contains $, a '
+                                    'backtick or a double quote): move it, then run /pace setup again.'])
+    if os.path.normcase(target) != os.path.normcase(src):
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(src, target)
     flags = '--record-only' if silent else '--full --standalone'  # not `mode`: that name holds the file mode
     command = f'{py} -S "{_dq(posix(target))}" statusline {flags}'
     cur = conf.get('statusLine')
@@ -1240,7 +1253,7 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
                 except OSError:
                     pass
             return '\n'.join(out + [f'could not write {posix(settings)} (read-only or locked): nothing changed.'])
-        what ='repointed to this copy of pace' if is_pace else 'set'
+        what = 'repointed to this copy of pace' if is_pace else 'set'
         out.append(f'statusLine {what} in {posix(settings)}' + (' (previous file backed up).' if backup else '.'))
         out.append('A statusLine in settings.local.json, a project or managed settings overrides this one.')
     out.append('Needs Claude Code 2.1.80+ and a Pro or Max plan; API-key sessions send no usage data.')
@@ -1278,6 +1291,8 @@ def _reply(cmd: str, ctl: dict, text: str) -> str:
 
 
 def cmd_prompt(raw: dict, cfg: dict, now: float):
+    # first: a refused state dir must not keep the status line on an old copy that still writes to a shared one
+    refresh_stable_copy(config_dir(), __file__)
     sd = state_dir()
     cmd = parse_pace_prompt(raw.get('prompt') or '')
     ctl = read_ctl(sd)
@@ -1287,7 +1302,6 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
         return {'decision': 'block', 'reason': cmd_setup(config_dir(), __file__, cmd == 'setup-silent')}
     if cmd == 'guide':
         return {'decision': 'block', 'reason': _reply(cmd, ctl, cmd_guide(__file__))}
-    refresh_stable_copy(config_dir(), __file__)
     if cmd:
         if cmd not in ('status', 'brief'):
             ctl = apply_ctl(cmd, ctl, cfg)

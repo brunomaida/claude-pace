@@ -17,12 +17,14 @@ Report a vulnerability privately through GitHub: <https://github.com/brunomaida/
 ## Trust model
 
 - The user's own account and environment are trusted: `CLAUDE_PACING_DIR`, `CLAUDE_PACING_CONFIG` and `CLAUDE_CONFIG_DIR` redirect where pace reads and writes.
-- Other local users are not trusted. On POSIX the state directory must be the caller's own real directory: a link, a file or a directory owned by someone else is refused, and pace then does nothing (a `ctl` command prints `pace ctl failed: PermissionError`). A directory of the caller's with a loose mode is tightened to 0700.
+- Other local users are not trusted. On POSIX the state directory must be the caller's own real directory: a link, a file or a directory owned by someone else is refused, and pace then does nothing (a `ctl` command prints `pace ctl failed: PermissionError`). The default directory, when it is the caller's own with a loose mode, is tightened to 0700; one named by `CLAUDE_PACING_DIR` is validated but its mode is left to you.
 - State files are not trusted either: a decision dated in the future, a state tag pace never writes, or a rate table with non-numeric keys is ignored; slot files dated in the future are dropped; session ids are reduced to a plain token before they become file names.
-- Temp files are created exclusively with mode 0600, so a planted name or link is never followed.
+- Files written through `_write_text` (state, settings) go through an exclusive 0600 temp file, so a planted name or link is never followed. Slot files and the agents lock are created with your umask and are protected by the 0700 directory.
 
 ## Known limits
 
 - `commands/pace.md` allows `Bash(python3 -S *pacing.py* ctl*)` and its `python` and `py -3` variants so the command runs without a prompt. The `*` before the script name is a wide match.
 - Removing the plugin does not remove the `statusLine` entry that `/pace setup` added; until you delete it (see the README), the status line keeps running `~/.claude/pace/pacing.py` and writing state.
+- On a shared Linux host the default name `claude-pacing-<uid>` is predictable: another user can create it first. Pace then refuses it and does nothing (a standalone status line is blank, `/pace ...` prints `pace ctl failed`). Point `CLAUDE_PACING_DIR` at a directory under your home or `$XDG_RUNTIME_DIR` to avoid it.
+- Upgrading from 0.13 on Linux and macOS leaves the old state directory behind: the on/off switches and the template are reset once. Run `/pace on` again.
 - On Windows, `/pace setup` refuses a config dir or Python path that contains `$`, a backtick or a double quote, because Git Bash and PowerShell escape them differently.
