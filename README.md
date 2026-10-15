@@ -92,7 +92,7 @@ To remove it:
 /plugin uninstall pace@claude-pace
 ```
 
-then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settings.json` (the backup next to it is named `settings.json.pace-backup-<time>`) and the folder `~/.claude/pace/`. State lives in your system temp directory under `claude-pacing` and holds no secrets.
+then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settings.json` (the backup next to it is named `settings.json.pace-backup-<time>`) and the folder `~/.claude/pace/`. State lives in your system temp directory under `claude-pacing` (`claude-pacing-<uid>`, mode 0700, on Linux and macOS) and holds no secrets. Until you remove that `statusLine` entry, the status line keeps running the copy in `~/.claude/pace/`. See [SECURITY.md](SECURITY.md).
 
 ## Tested on
 

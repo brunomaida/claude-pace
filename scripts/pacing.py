@@ -27,11 +27,11 @@ u5 envelope has a fresh reading before the oldest window starts.
 Unit: every `%` is an absolute share of the weekly quota (71% used - 38% budget = +33%).
 """
 from __future__ import annotations
-import datetime, filecmp, glob, json, os, pathlib, re, shutil, sys, tempfile, time
+import datetime, filecmp, glob, json, os, pathlib, re, shutil, stat, sys, tempfile, time
 
 # Version of pace itself, not a roadmap phase: every change or request adds 1 to the minor counter (0.1, 0.2, ...
 # 0.9, 0.10); the major moves only on an explicit release or macro request. The manual's brand tag must match.
-VERSION = '0.13'
+VERSION = '0.14'
 
 DEFAULTS = {
     'ceiling_pct': 95,                  # share of the weekly quota the budget may reach (5% reserve)
@@ -76,7 +76,12 @@ AFTER_NOTE = ('pace template after: call `statusline --full --after` in your scr
               'the flag). Its first byte says what follows: \\x02 = one line to print after your own lines, '
               '\\x01 = the cadence segment, anything else = a whole layout to print as it is. '
               'Until then nothing changes.')
-_DEFAULT_STATE = os.path.join(tempfile.gettempdir(), 'claude-pacing')
+# POSIX: one directory per user. A fixed `/tmp/claude-pacing` is shared, and whoever creates it first owns it.
+_DEFAULT_STATE = os.path.join(tempfile.gettempdir(),
+                              'claude-pacing' if os.name == 'nt' else f'claude-pacing-{os.getuid()}')
+STATES = ('na', 'stale', 'ok', 'L1', 'L2', 'L3')  # the only values `decide` writes as `state`
+FUTURE_SKEW_S = 60                  # how far ahead of `now` a state file's timestamp may be before it is ignored
+_SID_RE = re.compile(r'[A-Za-z0-9_-]{1,64}')
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
 
 
@@ -97,10 +102,31 @@ def load_config() -> dict:
     return cfg
 
 
+def _dir_problem(st, uid: int) -> str:
+    """Why a state directory may not be trusted ('' when it may): a link or a file, or not the caller's."""
+    if not stat.S_ISDIR(st.st_mode):
+        return 'not a directory (a link or a file)'
+    if st.st_uid != uid:
+        return 'owned by another user'
+    return ''
+
+
 def state_dir(create: bool = False) -> str:
+    """The state directory. On POSIX it must be the caller's own real directory: a loose mode is tightened to
+    0700, anything else raises PermissionError, which every caller turns into fail-open."""
     d = os.environ.get('CLAUDE_PACING_DIR') or _DEFAULT_STATE
     if create:
-        os.makedirs(d, exist_ok=True)
+        os.makedirs(d, mode=0o700, exist_ok=True)
+    if os.name != 'nt':
+        try:
+            st = os.lstat(d)
+        except FileNotFoundError:
+            return d  # nothing there yet: readers see an empty state
+        why = _dir_problem(st, os.getuid())
+        if why:
+            raise PermissionError(f'unsafe state dir {d}: {why}')
+        if st.st_mode & 0o077:
+            os.chmod(d, 0o700)
     return d
 
 
@@ -112,11 +138,23 @@ def _read_json(path: str):
         return None
 
 
-def _write_text(path: str, text: str) -> bool:
-    """Atomic write; False when the file stayed locked (state writers ignore it, `setup` reports it)."""
-    tmp = f'{path}.{os.getpid()}.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        f.write(text)
+def _write_text(path: str, text: str, mode: int | None = None) -> bool:
+    """Atomic write through an exclusive 0600 temp file, so a planted name or link is never followed; `mode`,
+    when given, is applied to it before it replaces `path`. False when the file stayed locked (state writers
+    ignore it, `setup` reports it)."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or '.', prefix=os.path.basename(path) + '.',
+                               suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(text)
+        if mode is not None and os.name != 'nt':
+            os.chmod(tmp, mode)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     for _ in range(5):
         try:
             os.replace(tmp, path)
@@ -132,6 +170,35 @@ def _write_text(path: str, text: str) -> bool:
 
 def _write_json(path: str, obj) -> None:
     _write_text(path, json.dumps(obj))
+
+
+def _safe_sid(value) -> str:
+    """A session or agent id as a file-name part: a plain token, else `x` (never a path)."""
+    s = str(value or '')
+    return s if _SID_RE.fullmatch(s) else 'x'
+
+
+def _read_decision(sd: str, now: float):
+    """decision.json, or None when it is missing, dated in the future or carries a state that `decide` never
+    writes. What reaches a status line or a reply is checked here, because the file sits in a directory that
+    another process could have written. Rate tables with a non-numeric key are dropped whole."""
+    dec = _read_json(os.path.join(sd, 'decision.json'))
+    if not isinstance(dec, dict):
+        return None
+    ts = dec.get('ts')
+    if isinstance(ts, bool) or not isinstance(ts, (int, float)) or ts > now + FUTURE_SKEW_S:
+        return None
+    if dec.get('state', 'na') not in STATES:
+        return None
+    for key in ('rates', 'rates5'):
+        table = dec.get(key)
+        if table is None:
+            continue
+        try:
+            dec[key] = {str(int(k)): float(v) for k, v in table.items()}
+        except (AttributeError, TypeError, ValueError):
+            del dec[key]
+    return dec
 
 
 def read_ctl(sd: str) -> dict:
@@ -790,7 +857,7 @@ def _slots(sd: str, now: float, cfg: dict) -> list:
     for p in sorted(glob.glob(os.path.join(_agents_dir(sd), '*'))):
         ttl = cfg['pending_ttl_s'] if p.endswith('.p') else cfg['agent_ttl_min'] * 60
         try:
-            if now - os.path.getmtime(p) <= ttl:
+            if -FUTURE_SKEW_S <= now - os.path.getmtime(p) <= ttl:  # a future-dated slot would never expire
                 live.append(p)
             else:
                 os.remove(p)
@@ -882,10 +949,10 @@ def _statusline_state(raw: dict, cfg: dict, now: float) -> tuple:
     rl = raw.get('rate_limits') or {}
     five, seven = rl.get('five_hour') or {}, rl.get('seven_day') or {}
     if seven.get('used_percentage') is not None and seven.get('resets_at') is not None:
-        record_sample(sd, str(raw.get('session_id') or 'x'), now, five.get('used_percentage'),
+        record_sample(sd, _safe_sid(raw.get('session_id')), now, five.get('used_percentage'),
                       seven['used_percentage'], five.get('resets_at'), seven['resets_at'], cfg)
     prune_markers(sd, now)
-    prev = _read_json(os.path.join(sd, 'decision.json'))
+    prev = _read_decision(sd, now)
     ctl = read_ctl(sd)
     axes, mult = drive_axes(ctl), step_mult(ctl, cfg)
     if isinstance(prev, dict) and now - prev.get('ts', 0) < cfg['recompute_s'] and prev.get('axes') == list(axes) \
@@ -982,7 +1049,7 @@ def cmd_enforce(raw: dict, cfg: dict, now: float, sleep=time.sleep):
     tool = raw.get('tool_name', '')
     if not acting_axes(ctl) or tool in cfg['exempt_tools']:
         return None
-    dec = _read_json(os.path.join(sd, 'decision.json'))
+    dec = _read_decision(sd, now)
     fresh = isinstance(dec, dict) and now - dec.get('ts', 0) <= cfg['stale_s']
     # a decision of a 5h window that already reset: level 3 and the 5h delay are gone, the weekly part stays
     expired = fresh and (dec.get('r5') or float('inf')) <= now
@@ -1002,7 +1069,8 @@ def cmd_enforce(raw: dict, cfg: dict, now: float, sleep=time.sleep):
         # Cache guard: pace adds at most `cap_s` per model turn and never pushes the gap since the last
         # response past `cache_ttl_s - cache_margin_s`, so the next request still hits the cheap cache.
         tpath = _transcript_for(raw)
-        key = f'{raw.get("session_id") or "x"}.{os.path.basename(tpath) if tpath else raw.get("agent_id") or "main"}'
+        who = os.path.basename(tpath) if tpath else _safe_sid(raw.get('agent_id')) if raw.get('agent_id') else 'main'
+        key = f'{_safe_sid(raw.get("session_id"))}.{who}'
         marker = os.path.join(sd, f'slept.{key}')
         state = _read_json(marker)
         state = state if isinstance(state, dict) else {}
@@ -1126,6 +1194,12 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
         if not isinstance(conf, dict):
             return '\n'.join(out + [f'{posix(settings)} is not a JSON object: left untouched.'])
     target = _stable_target(cfg_dir, src)
+    if os.name == 'nt' and re.search(r'[$`"]', posix(target) + posix(sys.executable)):
+        # Git Bash and PowerShell both expand `$` and a backtick inside double quotes, and they escape them
+        # differently: one quoting cannot be right for both, so the entry is not written.
+        return '\n'.join(out + [f'cannot quote {posix(target)} safely for the status line (it contains $, a '
+                                'backtick or a double quote): move the config dir or Python, then run '
+                                '/pace setup again.'])
     if os.path.normcase(target) != os.path.normcase(src):
         os.makedirs(os.path.dirname(target), exist_ok=True)
         shutil.copyfile(src, target)
@@ -1158,16 +1232,15 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
             backup = f'{settings}.pace-backup-{int(time.time())}'
             shutil.copy2(settings, backup)
         conf['statusLine'] = {'type': 'command', 'command': command}
-        if not _write_text(settings, json.dumps(conf, indent=2, ensure_ascii=False) + '\n'):
+        # the temp file carries the original mode before it replaces the file: it may hold secrets
+        if not _write_text(settings, json.dumps(conf, indent=2, ensure_ascii=False) + '\n', mode):
             if backup:
                 try:
                     os.remove(backup)
                 except OSError:
                     pass
             return '\n'.join(out + [f'could not write {posix(settings)} (read-only or locked): nothing changed.'])
-        if mode is not None and os.name != 'nt':
-            os.chmod(settings, mode)  # the temp file replaced it with the default mode; the file may hold secrets
-        what = 'repointed to this copy of pace' if is_pace else 'set'
+        what ='repointed to this copy of pace' if is_pace else 'set'
         out.append(f'statusLine {what} in {posix(settings)}' + (' (previous file backed up).' if backup else '.'))
         out.append('A statusLine in settings.local.json, a project or managed settings overrides this one.')
     out.append('Needs Claude Code 2.1.80+ and a Pro or Max plan; API-key sessions send no usage data.')
@@ -1208,7 +1281,7 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
     sd = state_dir()
     cmd = parse_pace_prompt(raw.get('prompt') or '')
     ctl = read_ctl(sd)
-    dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
+    dec = _read_decision(sd, now) or {'state': 'na'}
     if cmd in ('setup', 'setup-silent'):
         first_use_menu(cmd, ctl)  # `setup` is one of the menu's answers: it marks, it shows nothing
         return {'decision': 'block', 'reason': cmd_setup(config_dir(), __file__, cmd == 'setup-silent')}
@@ -1259,7 +1332,7 @@ def _ctl(argv: list[str], cfg: dict, now: float) -> int:
     ctl = read_ctl(sd) if view_only else apply_ctl(cmd, read_ctl(sd), cfg)
     if not view_only:
         _write_json(os.path.join(sd, 'ctl.json'), ctl)
-    dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
+    dec = _read_decision(sd, now) or {'state': 'na'}
     show = format_brief if cmd == 'brief' else format_status
     print(_reply(cmd, ctl, show(dec, ctl, cfg, now, count_agents(sd, now, cfg))))
     return 0

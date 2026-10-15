@@ -1,6 +1,6 @@
 """Behaviour tests for hooks/pacing.py (weekly pacing cadencer; default OFF)."""
 from __future__ import annotations
-import contextlib, datetime, io, json, os, subprocess, sys, tempfile, time, unittest
+import contextlib, datetime, io, json, os, stat, subprocess, sys, tempfile, time, types, unittest
 from unittest import mock
 from pathlib import Path
 
@@ -1431,6 +1431,143 @@ class FirstUse(unittest.TestCase):
             return buf.getvalue()
         self.assertIn('first use', run())
         self.assertNotIn('first use', run())
+
+
+class Hardening(unittest.TestCase):
+    """State in a temp dir is written and read back trusting only its owner (issue #4)."""
+    T0 = 1_791_640_000.0
+    posix_only = unittest.skipUnless(os.name != 'nt', 'owner and mode bits are a POSIX notion')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sd = self.tmp.name
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': self.sd})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _plant(self, name, obj):
+        Path(self.sd, name).write_text(json.dumps(obj), encoding='utf-8')
+
+    def test_dirProblem_trustsOnlyARealDirectoryOfTheCaller(self):
+        st = lambda kind, uid: types.SimpleNamespace(st_mode=kind | 0o700, st_uid=uid)
+        self.assertEqual(pacing._dir_problem(st(stat.S_IFDIR, 7), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFDIR, 8), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFLNK, 7), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFREG, 7), 7), '')
+
+    def test_defaultStateName_isPerUserOnPosix(self):
+        want = 'claude-pacing' if os.name == 'nt' else f'claude-pacing-{os.getuid()}'
+        self.assertEqual(os.path.basename(pacing._DEFAULT_STATE), want)
+
+    @posix_only
+    def test_stateDir_isCreatedPrivate(self):
+        d = os.path.join(self.sd, 'fresh')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': d}):
+            pacing.state_dir(create=True)
+        self.assertEqual(stat.S_IMODE(os.lstat(d).st_mode), 0o700)
+
+    @posix_only
+    def test_stateDir_tightensALooseDirOfTheCaller(self):
+        os.chmod(self.sd, 0o755)
+        pacing.state_dir()
+        self.assertEqual(stat.S_IMODE(os.lstat(self.sd).st_mode), 0o700)
+
+    @posix_only
+    def test_stateDir_refusesALink(self):
+        link = os.path.join(self.sd, 'link')
+        os.symlink(self.sd, link)
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': link}):
+            with self.assertRaises(PermissionError):
+                pacing.state_dir()
+
+    def test_writeText_neverUsesAPredictableTempName(self):
+        target = os.path.join(self.sd, 'ctl.json')
+        planted = f'{target}.{os.getpid()}.tmp'
+        Path(planted).write_text('planted', encoding='utf-8')
+        self.assertTrue(pacing._write_text(target, '{"a": 1}'))
+        self.assertEqual(Path(planted).read_text(encoding='utf-8'), 'planted')
+        self.assertEqual(Path(target).read_text(encoding='utf-8'), '{"a": 1}')
+        self.assertEqual(sorted(os.listdir(self.sd)), sorted(['ctl.json', os.path.basename(planted)]))
+
+    @posix_only
+    def test_writeText_createsPrivateFiles(self):
+        target = os.path.join(self.sd, 'x.json')
+        pacing._write_text(target, '{}')
+        self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0o600)
+
+    @posix_only
+    def test_writeText_appliesTheRequestedModeBeforeTheReplace(self):
+        target = os.path.join(self.sd, 'x.json')
+        pacing._write_text(target, '{}', mode=0o640)
+        self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0o640)
+
+    def test_readDecision_dropsWhatIsFromTheFutureOrNotOurs(self):
+        for planted in ({'ts': self.T0 + 1e9, 'state': 'L2', 'level': 2},
+                        {'ts': self.T0, 'state': '\x1b]52;c;AA\x07', 'level': 2},
+                        {'ts': True, 'state': 'L1'},
+                        {'state': 'L1'}):
+            self._plant('decision.json', planted)
+            self.assertIsNone(pacing._read_decision(self.sd, self.T0), planted)
+        self._plant('decision.json', {'ts': self.T0 - 5, 'state': 'L1', 'level': 1})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['state'], 'L1')
+
+    def test_readDecision_dropsRateTablesWithAnyNonNumericKey(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'10': 4.2, '\x1b[2J': 1.0},
+                                      'rates5': {'5': 1}})
+        dec = pacing._read_decision(self.sd, self.T0)
+        self.assertNotIn('rates', dec)
+        self.assertEqual(dec['rates5'], {'5': 1.0})
+
+    def test_slots_dropAFutureDatedSlot(self):
+        agents = Path(self.sd, 'agents')
+        agents.mkdir()
+        slot = agents / 'planted.a'
+        slot.write_text('x')
+        os.utime(slot, (self.T0 + 1e6, self.T0 + 1e6))
+        self.assertEqual(pacing._slots(self.sd, self.T0, CFG), [])
+        self.assertFalse(slot.exists())
+
+    def test_safeSid_keepsOnlyAPlainToken(self):
+        got = [pacing._safe_sid(v) for v in ('abc-123_D', '../../x', 'a/b', 'a\\b', '', None, 'y' * 65)]
+        self.assertEqual(got, ['abc-123_D', 'x', 'x', 'x', 'x', 'x', 'x'])
+
+    def test_statusline_recomputesAPlantedFutureDecision(self):
+        self._plant('ctl.json', {'wk': {'on': True}, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': NOW + 1e9, 'state': 'L2', 'level': 2, 'delay_wk': 45.0,
+                                      'axes': ['wk'], 'mult': 1.0, 'r5': 1e18, 'r7': 1e18})
+        raw = {'session_id': 's', 'rate_limits': {'five_hour': {'used_percentage': 40, 'resets_at': 1791648600},
+                                                  'seven_day': {'used_percentage': 71, 'resets_at': RESET7}}}
+        dec, _, _ = pacing._statusline_state(raw, CFG, NOW)
+        self.assertEqual(dec['ts'], NOW)
+
+    def test_enforce_ignoresAFutureDecision(self):
+        self._plant('ctl.json', {'on': True, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': self.T0 + 1e9, 'state': 'L1', 'level': 1, 'delay_rec': 45.0,
+                                      'delay_wk': 45.0})
+        slept = []
+        pacing.cmd_enforce({'tool_name': 'Edit', 'session_id': 's1'}, dict(CFG), self.T0, sleep=slept.append)
+        self.assertEqual(sum(slept), 0)
+
+    def test_enforce_sessionIdCannotNameAFileOutsideTheState(self):
+        self._plant('ctl.json', {'on': True, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1, 'delay_rec': 45.0,
+                                      'delay_wk': 45.0})
+        pacing.cmd_enforce({'tool_name': 'Edit', 'session_id': '../../evil'}, dict(CFG), self.T0 + 1,
+                           sleep=lambda s: None)
+        names = os.listdir(self.sd)
+        self.assertTrue(any(n.startswith('slept.x.') for n in names), names)
+        self.assertFalse(any('evil' in n for n in names), names)
+
+    @unittest.skipUnless(os.name == 'nt', 'POSIX paths are escaped; only Windows paths are refused')
+    def test_setup_refusesAPathItCannotQuote(self):
+        cfg = Path(self.sd) / 'a$b'
+        cfg.mkdir()
+        out = pacing.cmd_setup(str(cfg), pacing.__file__)
+        self.assertIn('cannot quote', out)
+        self.assertFalse((cfg / 'settings.json').exists())
 
 
 class Cli(unittest.TestCase):

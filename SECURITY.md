@@ -1,0 +1,28 @@
+# Security
+
+## Reporting
+
+Report a vulnerability privately through GitHub: <https://github.com/brunomaida/claude-pace/security/advisories/new>. Please do not open a public issue for it.
+
+## What pace touches
+
+| Surface | Detail |
+|---|---|
+| Hooks | `PreToolUse`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop` run `scripts/pacing.py` on every tool call and prompt. A pause never exceeds `cap_s` (at most 55 s, under the 60 s hook timeout) and every failure is fail-open. |
+| Status line | `/pace setup` writes a `statusLine` command into `~/.claude/settings.json` (backed up first, never over a status line that is not pace's) and copies the script to `~/.claude/pace/pacing.py`. |
+| State | Usage samples, the decision and slot files live in a temp directory: `%TEMP%\claude-pacing` on Windows, `claude-pacing-<uid>` in the temp directory on Linux and macOS, mode 0700. |
+| Config | `~/.claude/config/pacing.config.json` and the first-use marker `~/.claude/config/pacing.welcomed`. |
+| Network | None from the scripts. The manual (`/pace guide`) loads fonts from Google when opened in a browser. |
+
+## Trust model
+
+- The user's own account and environment are trusted: `CLAUDE_PACING_DIR`, `CLAUDE_PACING_CONFIG` and `CLAUDE_CONFIG_DIR` redirect where pace reads and writes.
+- Other local users are not trusted. On POSIX the state directory must be the caller's own real directory: a link, a file or a directory owned by someone else is refused, and pace then does nothing (a `ctl` command prints `pace ctl failed: PermissionError`). A directory of the caller's with a loose mode is tightened to 0700.
+- State files are not trusted either: a decision dated in the future, a state tag pace never writes, or a rate table with non-numeric keys is ignored; slot files dated in the future are dropped; session ids are reduced to a plain token before they become file names.
+- Temp files are created exclusively with mode 0600, so a planted name or link is never followed.
+
+## Known limits
+
+- `commands/pace.md` allows `Bash(python3 -S *pacing.py* ctl*)` and its `python` and `py -3` variants so the command runs without a prompt. The `*` before the script name is a wide match.
+- Removing the plugin does not remove the `statusLine` entry that `/pace setup` added; until you delete it (see the README), the status line keeps running `~/.claude/pace/pacing.py` and writing state.
+- On Windows, `/pace setup` refuses a config dir or Python path that contains `$`, a backtick or a double quote, because Git Bash and PowerShell escape them differently.
