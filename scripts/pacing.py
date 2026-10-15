@@ -27,7 +27,7 @@ u5 envelope has a fresh reading before the oldest window starts.
 Unit: every `%` is an absolute share of the weekly quota (71% used - 38% budget = +33%).
 """
 from __future__ import annotations
-import datetime, filecmp, glob, json, os, pathlib, re, shutil, stat, sys, tempfile, time
+import datetime, filecmp, glob, json, math, os, pathlib, re, shutil, stat, sys, tempfile, time
 
 # Version of pace itself, not a roadmap phase: every change or request adds 1 to the minor counter (0.1, 0.2, ...
 # 0.9, 0.10); the major moves only on an explicit release or macro request. The manual's brand tag must match.
@@ -198,14 +198,17 @@ def _read_decision(sd: str, now: float):
         return None
     for key in _DECISION_NUMBERS:  # printed raw by `format_status`: a string here could carry escape codes
         v = dec.get(key)
-        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)):
             return None
     for key in ('rates', 'rates5'):
         table = dec.get(key)
         if table is None:
             continue
         try:
-            dec[key] = {str(k): float(v) for k, v in table.items() if float(k) is not None}
+            pairs = [(float(k), float(v)) for k, v in table.items()]
+            if not all(math.isfinite(k) and math.isfinite(v) for k, v in pairs):
+                raise ValueError(key)
+            dec[key] = {f'{k:g}': v for k, v in pairs}  # a window key is re-rendered, never kept raw
         except (AttributeError, TypeError, ValueError):
             del dec[key]
     return dec

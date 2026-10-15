@@ -1635,6 +1635,18 @@ class Hardening(unittest.TestCase):
         self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'7.5': 1.0, '10': 2.0}})
         self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'7.5': 1.0, '10': 2.0})
 
+    def test_readDecision_rendersTheRateKeysNeverKeepsThemRaw(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1',
+                                      'rates': {'\r10': 2.0, '5\n': 1.0, ' 7.5 ': 3.0}})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'10': 2.0, '5': 1.0, '7.5': 3.0})
+
+    def test_readDecision_dropsWhatIsNotFinite(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L3', 'level': 3, 'r5': float('inf')})
+        self.assertIsNone(pacing._read_decision(self.sd, self.T0))
+        for table in ({'nan': 1.0}, {'10': float('inf')}, {'inf': 1.0}):
+            self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates5': table})
+            self.assertNotIn('rates5', pacing._read_decision(self.sd, self.T0), table)
+
     def test_manualLoadsNothingFromTheNetwork(self):
         html = (HOOKS.parent / 'docs' / 'pacing-cadencer-readme.html').read_text(encoding='utf-8')
         loads = re.findall(r'<(?:link|script|img|iframe)\b[^>]*(?:href|src)="https?://[^"]*"', html)
@@ -1645,13 +1657,17 @@ class Hardening(unittest.TestCase):
         md = (HOOKS.parent / 'commands' / 'pace.md').read_text(encoding='utf-8')
         line = next(l for l in md.splitlines() if l.startswith('allowed-tools:'))
         rules = re.findall(r'Bash\(([^)]*)\)', line)
-        self.assertEqual(len(rules), 3, line)
+        self.assertEqual(len(rules), 6, line)
         allowed = lambda cmd: any(fnmatch.fnmatchcase(cmd, r) for r in rules)
         for ok in ('python3 -S "/home/u/.claude/plugins/cache/pace/0.14/scripts/pacing.py" ctl status',
+                   'python3 -S "/c/Users/u/pace/scripts/pacing.py" ctl status',
                    'python -S "C:\\Users\\u x\\.claude\\plugins\\pace\\scripts\\pacing.py" ctl on',
                    'py -3 -S "C:/Users/u/pace/scripts/pacing.py" ctl template after'):
             self.assertTrue(allowed(ok), ok)
         for bad in ('python3 -S -c "import os;os.system(1)" pacing.py ctl',
+                    'python3 -S "-cimport os;os.system(1)#pacing.py" ctl status',
+                    'python -S "-c" "import os;os.system(1)" "pacing.py" ctl',
+                    'python -S "-m x#pacing.py" ctl',
                     'python3 -S /tmp/evil.py ctl status',
                     'python3 "/x/pacing.py" ctl status',
                     'python3 -c "print(1)" -S "/x/pacing.py" ctl'):
@@ -1664,6 +1680,18 @@ class Hardening(unittest.TestCase):
         out = pacing.cmd_setup(str(cfg), pacing.__file__)
         self.assertIn('cannot quote', out)
         self.assertFalse((cfg / 'settings.json').exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'the quoting refusal is Windows-only')
+    def test_setup_aPythonPathWithADollarIsNotRefusedWhenABareNameResolvesToIt(self):
+        cfg = Path(self.sd) / 'cfg'
+        cfg.mkdir()
+        exe = r'C:\a$b\python.exe'
+        with mock.patch.object(pacing.sys, 'executable', exe), \
+                mock.patch.object(pacing.shutil, 'which', return_value=exe), \
+                mock.patch.object(pacing.os.path, 'realpath', side_effect=lambda p: p):
+            out = pacing.cmd_setup(str(cfg), pacing.__file__)
+        self.assertNotIn('cannot quote', out)
+        self.assertIn('python -S', (cfg / 'settings.json').read_text(encoding='utf-8'))
 
 
 class Cli(unittest.TestCase):

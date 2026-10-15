@@ -114,7 +114,7 @@ Run by hand against the real Claude Code host (2.1.300, Windows 11, plugin loade
 | A real subagent takes a slot at `SubagentStart` and releases it at `SubagentStop` | pass |
 | `/pace guide` hands the manual to the OS opener (`os.startfile`) | ran without error; the browser window was not observed by the test |
 
-Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
+Not covered by any run: the anchored `allowed-tools` rules of 0.14 (`/*pacing.py`, `?:*pacing.py`) against the real host, which is expected to show at worst a permission prompt; the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
 
 ## Limits
 
