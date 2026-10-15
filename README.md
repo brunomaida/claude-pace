@@ -1,6 +1,18 @@
 # pace
 
-A Claude Code plugin that spreads your subscription use over the week and over the 5-hour window. It watches the usage Claude Code reports, works out how fast you are going against how fast you can afford to go, and adds a short, bounded delay to tool calls when you are ahead. It can also cap how many subagents run at once. Nothing is throttled until you turn it on.
+- **Heavy Pro/Max use:** a gauge with limits for the 5 h and weekly windows.
+- **Many fronts at once:** parallel agents share one steady cadence.
+- **Same quota, other tools:** heavy Desktop/Design slows Claude Code.
+- **Fewer stalls:** the pause grows before the 5 h window hits the ceiling.
+- **Weekly reserve:** spreads the week over business days, 5% kept.
+- **One account:** all sessions and subagents count together.
+- **Predictable cost:** pauses stay under the cache TTL.
+- **See first:** `pace measure` shows the cut, pauses nothing.
+- **Your control:** off by default, manual step, fail-open.
+
+![Cumulative usage without pace and with pace, over the 5 h window and over the week](docs/pace-before-after.png)
+
+*Illustrative model, not measured data. Pace delays calls; it does not reduce the tokens a task needs. The same work finishes later than an unrestricted burst, but without hitting the ceiling and stalling until the reset. A marks when the same task set finishes in each chart.*
 
 ## Requirements
 
