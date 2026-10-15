@@ -1,12 +1,18 @@
 """Behaviour tests for hooks/pacing.py (weekly pacing cadencer; default OFF)."""
 from __future__ import annotations
-import datetime, json, os, subprocess, sys, tempfile, time, unittest
+import contextlib, datetime, io, json, os, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path[:0] = [str(HOOKS)]
 import pacing  # noqa: E402
+
+# A pre-written first-use marker in a private config dir: no test below sees the menu, and none touches ~/.claude.
+_CFG = tempfile.TemporaryDirectory()
+(Path(_CFG.name) / 'config').mkdir()
+(Path(_CFG.name) / 'config' / 'pacing.welcomed').write_text('0', encoding='utf-8')
+os.environ['CLAUDE_CONFIG_DIR'] = _CFG.name
 
 # Reset Thu 2026-10-15 09:00Z; window = Thu 2026-10-08 09:00Z .. reset; "now" = Sat 2026-10-10 14:19Z.
 RESET7 = 1792054800
@@ -1335,6 +1341,70 @@ class AfterContract(unittest.TestCase):
         self.assertNotIn(pacing.APPEND_MARK, out)
         self.assertNotIn(pacing.SEGMENT_MARK, out)
         self.assertIn('Opus', out)
+
+
+class FirstUse(unittest.TestCase):
+    """The one-time menu and the `after` note that a command's reply can carry."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.marker = self.root / 'config' / 'pacing.welcomed'
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root),
+                                                'CLAUDE_PACING_DIR': str(self.root / 'state')})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _reason(self, prompt):
+        return pacing.cmd_prompt({'prompt': prompt}, CFG, NOW)['reason']
+
+    def test_firstCommand_showsTheMenuOnceAndWritesTheMarker(self):
+        first = self._reason('/pace status')
+        self.assertIn('first use', first)
+        for choice in ('/pace template L2', '/pace template off', '/pace template after'):
+            self.assertIn(choice, first)
+        self.assertTrue(self.marker.exists())
+        self.assertNotIn('first use', self._reason('/pace status'))
+
+    def test_typedForm_showsItToo(self):
+        self.assertIn('first use', self._reason('pace on'))
+
+    def test_templateChoiceFirst_marksWithoutTheMenu(self):
+        self.assertNotIn('first use', self._reason('/pace template L2'))
+        self.assertTrue(self.marker.exists())
+
+    def test_setupFirst_marksWithoutTheMenu(self):
+        self.assertNotIn('first use', self._reason('/pace setup'))
+        self.assertTrue(self.marker.exists())
+
+    def test_templateAlreadySet_marksWithoutTheMenu(self):
+        (self.root / 'state').mkdir()
+        (self.root / 'state' / 'ctl.json').write_text(json.dumps({'template': 'L1'}), encoding='utf-8')
+        self.assertNotIn('first use', self._reason('/pace status'))
+        self.assertTrue(self.marker.exists())
+
+    def test_unwritableMarker_repeatsTheMenuWithoutRaising(self):
+        (self.root / 'config').write_text('a file where the directory should be', encoding='utf-8')
+        self.assertIn('first use', self._reason('/pace status'))
+        self.assertIn('first use', self._reason('/pace status'))
+
+    def test_afterCommand_printsTheScriptNote(self):
+        reason = self._reason('/pace template after')
+        self.assertIn('--after', reason)
+        self.assertIn('x02', reason)
+        self.assertNotIn('first use', reason)
+
+    def test_ctlPath_showsTheMenuOnceToo(self):
+        def run():
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(pacing._ctl(['pacing.py', 'ctl', 'status'], CFG, NOW), 0)
+            return buf.getvalue()
+        self.assertIn('first use', run())
+        self.assertNotIn('first use', run())
 
 
 class Cli(unittest.TestCase):

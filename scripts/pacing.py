@@ -67,6 +67,13 @@ TEMPLATES = ('L1', 'L2', 'C1', 'C2')  # status line layouts chosen with `pace te
 SEGMENT_MARK = '\x01'                 # `statusline --full` prefix that tells the shell "no template, this is the segment"
 APPEND_MARK = '\x02'                  # `statusline --full --after` prefix: the rest is one line for after the shell's own
 NO_DATA_HINT = 'no usage data: needs Claude Code 2.1.80+, Pro/Max and the pace status line (/pace setup)'
+WELCOME_MENU = '\n'.join((
+    'pace: first use. Choose how it shows on your status line:',
+    '  /pace template L2      ready layout (L1 L2 C1 C2)',
+    '  /pace template off     keep your status line as it is',
+    '  /pace template after   add one summary line after yours'))
+AFTER_NOTE = ('pace template after: pass --after to `statusline --full` in your script and, when the output '
+              'starts with \\x02, print the rest after your own lines. Until then nothing changes.')
 _DEFAULT_STATE = os.path.join(tempfile.gettempdir(), 'claude-pacing')
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
 
@@ -1163,12 +1170,42 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
     return '\n'.join(out)
 
 
+def welcome_marker() -> str:
+    """Persistent (config dir), unlike ctl.json: a temp-dir marker would bring the menu back after every reboot."""
+    return os.path.join(config_dir(), 'config', 'pacing.welcomed')
+
+
+def first_use_menu(cmd: str, ctl: dict) -> str:
+    """The one-time menu for the first `/pace`, or ''. A template choice, `setup` or a template already set are
+    the answer itself: they only write the marker. A marker that cannot be written leaves the menu showing."""
+    marker = welcome_marker()
+    if os.path.exists(marker):
+        return ''
+    try:
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        _write_text(marker, str(int(time.time())))
+    except OSError:
+        pass
+    answered = cmd.startswith('tpl-') or cmd in ('setup', 'setup-silent') or bool(ctl.get('template'))
+    return '' if answered else WELCOME_MENU
+
+
+def _reply(cmd: str, ctl: dict, text: str) -> str:
+    """A command's output plus what only some commands add: the `after` script note, the first-use menu."""
+    extra = [AFTER_NOTE] if cmd == 'tpl-after' else []
+    menu = first_use_menu(cmd, ctl)
+    if menu:
+        extra.append(menu)
+    return '\n'.join([text] + extra)
+
+
 def cmd_prompt(raw: dict, cfg: dict, now: float):
     sd = state_dir()
     cmd = parse_pace_prompt(raw.get('prompt') or '')
     ctl = read_ctl(sd)
     dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
     if cmd in ('setup', 'setup-silent'):
+        first_use_menu(cmd, ctl)  # `setup` is one of the menu's answers: it marks, it shows nothing
         return {'decision': 'block', 'reason': cmd_setup(config_dir(), __file__, cmd == 'setup-silent')}
     if cmd == 'guide':
         return {'decision': 'block', 'reason': cmd_guide(__file__)}
@@ -1179,7 +1216,8 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
             state_dir(create=True)
             _write_json(os.path.join(sd, 'ctl.json'), ctl)
         show = format_brief if cmd == 'brief' else format_status
-        return {'decision': 'block', 'reason': show(dec, ctl, cfg, now, count_agents(sd, now, cfg))}
+        text = show(dec, ctl, cfg, now, count_agents(sd, now, cfg))
+        return {'decision': 'block', 'reason': _reply(cmd, ctl, text)}
     state = dec.get('state', 'na')
     acting = acting_axes(ctl)
     if acting and state in ('ok', 'L1', 'L2', 'L3') and ctl.get('notified') != state \
@@ -1205,6 +1243,7 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
 def _ctl(argv: list[str], cfg: dict, now: float) -> int:
     cmd = parse_pace_prompt('pace ' + ' '.join(argv[2:])) or 'status'
     if cmd in ('setup', 'setup-silent'):
+        first_use_menu(cmd, {})
         print(cmd_setup(config_dir(), __file__, cmd == 'setup-silent'))
         return 0
     if cmd == 'guide':
@@ -1217,7 +1256,7 @@ def _ctl(argv: list[str], cfg: dict, now: float) -> int:
         _write_json(os.path.join(sd, 'ctl.json'), ctl)
     dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
     show = format_brief if cmd == 'brief' else format_status
-    print(show(dec, ctl, cfg, now, count_agents(sd, now, cfg)))
+    print(_reply(cmd, ctl, show(dec, ctl, cfg, now, count_agents(sd, now, cfg))))
     return 0
 
 
