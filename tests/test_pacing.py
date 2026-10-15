@@ -1,6 +1,6 @@
 """Behaviour tests for hooks/pacing.py (weekly pacing cadencer; default OFF)."""
 from __future__ import annotations
-import contextlib, datetime, io, json, os, stat, subprocess, sys, tempfile, time, types, unittest
+import contextlib, datetime, fnmatch, io, json, os, re, stat, subprocess, sys, tempfile, time, types, unittest
 from unittest import mock
 from pathlib import Path
 
@@ -1470,10 +1470,18 @@ class Hardening(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(os.lstat(d).st_mode), 0o700)
 
     @posix_only
-    def test_stateDir_tightensALooseDirOfTheCaller(self):
+    def test_stateDir_tightensALooseDefaultDirOfTheCaller(self):
         os.chmod(self.sd, 0o755)
-        pacing.state_dir()
+        with mock.patch.object(pacing, '_DEFAULT_STATE', self.sd), \
+                mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': ''}):
+            pacing.state_dir()
         self.assertEqual(stat.S_IMODE(os.lstat(self.sd).st_mode), 0o700)
+
+    @posix_only
+    def test_stateDir_leavesTheModeOfAnOverrideAlone(self):
+        os.chmod(self.sd, 0o755)
+        pacing.state_dir()  # CLAUDE_PACING_DIR is set to self.sd by setUp
+        self.assertEqual(stat.S_IMODE(os.lstat(self.sd).st_mode), 0o755)
 
     @posix_only
     def test_stateDir_refusesALink(self):
@@ -1626,6 +1634,28 @@ class Hardening(unittest.TestCase):
     def test_readDecision_keepsTheRateKeysOfAFractionalWindow(self):
         self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'7.5': 1.0, '10': 2.0}})
         self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'7.5': 1.0, '10': 2.0})
+
+    def test_manualLoadsNothingFromTheNetwork(self):
+        html = (HOOKS.parent / 'docs' / 'pacing-cadencer-readme.html').read_text(encoding='utf-8')
+        loads = re.findall(r'<(?:link|script|img|iframe)\b[^>]*(?:href|src)="https?://[^"]*"', html)
+        self.assertEqual(loads, [])
+        self.assertNotIn('@import url(http', html)
+
+    def test_commandAllowsOnlyTheScriptByItsQuotedPath(self):
+        md = (HOOKS.parent / 'commands' / 'pace.md').read_text(encoding='utf-8')
+        line = next(l for l in md.splitlines() if l.startswith('allowed-tools:'))
+        rules = re.findall(r'Bash\(([^)]*)\)', line)
+        self.assertEqual(len(rules), 3, line)
+        allowed = lambda cmd: any(fnmatch.fnmatchcase(cmd, r) for r in rules)
+        for ok in ('python3 -S "/home/u/.claude/plugins/cache/pace/0.14/scripts/pacing.py" ctl status',
+                   'python -S "C:\\Users\\u x\\.claude\\plugins\\pace\\scripts\\pacing.py" ctl on',
+                   'py -3 -S "C:/Users/u/pace/scripts/pacing.py" ctl template after'):
+            self.assertTrue(allowed(ok), ok)
+        for bad in ('python3 -S -c "import os;os.system(1)" pacing.py ctl',
+                    'python3 -S /tmp/evil.py ctl status',
+                    'python3 "/x/pacing.py" ctl status',
+                    'python3 -c "print(1)" -S "/x/pacing.py" ctl'):
+            self.assertFalse(allowed(bad), bad)
 
     @unittest.skipUnless(os.name == 'nt', 'POSIX paths are escaped; only Windows paths are refused')
     def test_setup_refusesAPathItCannotQuote(self):

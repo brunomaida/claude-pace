@@ -12,7 +12,7 @@ Report a vulnerability privately through GitHub: <https://github.com/brunomaida/
 | Status line | `/pace setup` writes a `statusLine` command into `~/.claude/settings.json` (backed up first, never over a status line that is not pace's) and copies the script to `~/.claude/pace/pacing.py`. |
 | State | Usage samples, the decision and slot files live in a temp directory: `%TEMP%\claude-pacing` on Windows, `claude-pacing-<uid>` in the temp directory on Linux and macOS, mode 0700. |
 | Config | `~/.claude/config/pacing.config.json` and the first-use marker `~/.claude/config/pacing.welcomed`. |
-| Network | None from the scripts. The manual (`/pace guide`) loads fonts from Google when opened in a browser. |
+| Network | None. The scripts open no connection, and the manual (`/pace guide`) loads no font, script or image from the network: it uses the system fonts (Inter and JetBrains Mono when installed). |
 
 ## Trust model
 
@@ -23,7 +23,7 @@ Report a vulnerability privately through GitHub: <https://github.com/brunomaida/
 
 ## Known limits
 
-- `commands/pace.md` allows `Bash(python3 -S *pacing.py* ctl*)` and its `python` and `py -3` variants so the command runs without a prompt. The `*` before the script name is a wide match.
+- `commands/pace.md` allows `Bash(python3 -S "*pacing.py" ctl*)` and its `python` and `py -3` variants so the command runs without a prompt. The argument right after `-S` must be a quoted path ending in `pacing.py`, which closes `python3 -S -c "..."`; any file named `pacing.py` still matches, and the rules are checked against Claude Code's own matcher only by the host checks in the README, not by the test suite. If a host rejects the quoted form you get a permission prompt, not a wider rule.
 - Removing the plugin does not remove the `statusLine` entry that `/pace setup` added; until you delete it (see the README), the status line keeps running `~/.claude/pace/pacing.py` and writing state.
 - On a shared Linux host the default name `claude-pacing-<uid>` is predictable: another user can create it first. Pace then refuses it and does nothing (a standalone status line is blank, `/pace ...` prints `pace ctl failed`). Point `CLAUDE_PACING_DIR` at a directory under your home or `$XDG_RUNTIME_DIR` to avoid it.
 - Upgrading from 0.13 on Linux and macOS leaves the old state directory behind: the on/off switches and the template are reset once. Run `/pace on` again.
