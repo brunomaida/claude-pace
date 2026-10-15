@@ -96,7 +96,7 @@ then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settin
 
 ## Tested on
 
-Only what has actually been run is listed. The package carries an install simulator (`tests/test_install.py`) that runs the hook commands and the command line through the shells and Python launchers present on the machine, in a profile whose path has a space and an accent. The `test` workflow runs it, with the rest of the package suite (213 tests), on every push.
+Only what has actually been run is listed. The package carries an install simulator (`tests/test_install.py`) that runs the hook commands and the command line through the shells and Python launchers present on the machine, in a profile whose path has a space and an accent. The `test` workflow runs it, with the rest of the package suite (273 tests), on every push.
 
 | Where (GitHub runner) | Shell | Python | Result |
 |---|---|---|---|
@@ -109,12 +109,12 @@ Run by hand against the real Claude Code host (2.1.300, Windows 11, plugin loade
 | Check | Result |
 |---|---|
 | Plugin hooks load and `/pace status` is answered by the prompt hook | pass |
-| `/pace:pace status` runs the command body, `${CLAUDE_PLUGIN_ROOT}` expands, `allowed-tools` approves it with no prompt | pass (after the rules were fixed to match the quoted script path) |
+| `/pace:pace status` runs the command body, `${CLAUDE_PLUGIN_ROOT}` expands, `allowed-tools` approves it with no prompt | pass on 0.14 with the anchored rules (`claude -p`, no permission denial; the `python3 \|\| python` chain fell through on a host with no `python3`) |
 | A decided pause is slept for a Bash and for a Read call (matcher omitted) | pass, pause marker written, no `pacing.err` |
 | A real subagent takes a slot at `SubagentStart` and releases it at `SubagentStop` | pass |
 | `/pace guide` hands the manual to the OS opener (`os.startfile`) | ran without error; the browser window was not observed by the test |
 
-Not covered by any run: the anchored `allowed-tools` rules of 0.14 (`/*pacing.py`, `?:*pacing.py`) against the real host, which is expected to show at worst a permission prompt; the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
+Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
 
 ## Limits
 
