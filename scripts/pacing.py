@@ -490,8 +490,9 @@ def format_line(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) ->
         if dec.get('state') in ('na', 'stale'):
             return head + ' no usage sample yet'
         blocks = []
+        full5h = dec.get('level') == 3 and bool(engaged_axes(c))  # the cap is the 5h window's: say when it ends
         for ax, label, used_k, reset_k in (('h5', '5h', 'u5', 'r5'), ('wk', 'wk', 'u7', None)):
-            if not (c[ax]['on'] or c[ax]['measure']):
+            if not (c[ax]['on'] or c[ax]['measure'] or (ax == 'h5' and full5h)):
                 continue
             items = []
             if dec.get(used_k) is not None:
@@ -1212,7 +1213,7 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
         first_use_menu(cmd, ctl)  # `setup` is one of the menu's answers: it marks, it shows nothing
         return {'decision': 'block', 'reason': cmd_setup(config_dir(), __file__, cmd == 'setup-silent')}
     if cmd == 'guide':
-        return {'decision': 'block', 'reason': cmd_guide(__file__)}
+        return {'decision': 'block', 'reason': _reply(cmd, ctl, cmd_guide(__file__))}
     refresh_stable_copy(config_dir(), __file__)
     if cmd:
         if cmd not in ('status', 'brief'):
@@ -1251,7 +1252,7 @@ def _ctl(argv: list[str], cfg: dict, now: float) -> int:
         print(cmd_setup(config_dir(), __file__, cmd == 'setup-silent'))
         return 0
     if cmd == 'guide':
-        print(cmd_guide(__file__))
+        print(_reply(cmd, read_ctl(state_dir()), cmd_guide(__file__)))
         return 0
     sd = state_dir(create=True)
     view_only = cmd in ('status', 'brief')

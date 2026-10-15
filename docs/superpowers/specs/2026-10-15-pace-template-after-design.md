@@ -38,7 +38,7 @@ AFTER      statusline --full --after     \x02 + summary line                 own
 `format_line(dec, ctl, cfg, now, active)`, one line, built from `cadence_fields`:
 
 ```
-pace [L2] 5h:31% 44>18%/h cut 59% reset 2h10m | wk:41% 4%/h -2%
+pace [L2] 5h:31% 44>18%/h cut 59% reset 2h10m | wk:41% 4%/h +8%
       |    |    |          |       |             |   |     |
       |    |    |          |       |             |   |     +-- lead vs budget (omitted inside deadband)
       |    |    |          |       |             |   +-------- weekly rate, %/h
@@ -51,7 +51,7 @@ pace [L2] 5h:31% 44>18%/h cut 59% reset 2h10m | wk:41% 4%/h -2%
 ```
 
 - An axis appears only when `on` or `measure` (same rule as `format_brief`).
-- `[L3]` (5h nearly full): the 5h block is `5h:<used>% reset <left>`; no rate, no cut.
+- `[L3]` (5h nearly full): the 5h block is `5h:<used>% reset <left>`, no rate, no cut, and it is shown even when only `wk` is engaged (the cap is the 5h window's); with nothing engaged the line is the tag only.
 - No sample (`state` `na`/`stale`): `pace <tag> no usage sample yet`, the tag being the segment's (`[off]` while nothing is engaged, `[n/a]` or `[?]` otherwise).
 - No axis shown and a sample exists: `pace <tag>`.
 
@@ -68,7 +68,7 @@ pace: first use. Choose how it shows on your status line:
   /pace template after   add one summary line after yours
 ```
 
-The menu is skipped, and the marker still written, when the command is `template ...`, `setup` or `setup silent`, or when `ctl['template']` is already set.
+The menu is skipped, and the marker still written, when the command is `template ...`, `setup` or `setup silent`, or when `ctl['template']` is already set. `guide` and `brief` carry the menu after their own output.
 
 ### `template after` command output
 
@@ -92,7 +92,7 @@ After setting `AFTER`, the command prints the one change the script needs: pass 
 | `--standalone` with AFTER | default layout, no `\x02` |
 | `format_line` both axes behind | contains `5h:`, `>`, `cut`, `reset`, `wk:` |
 | `format_line` one axis off | that axis absent |
-| `format_line` level 3 | no rate, no cut |
+| `format_line` level 3 | no rate, no cut; the 5h countdown stays when only `wk` is engaged |
 | `format_line` no sample | `pace [n/a] no usage sample yet` when an axis is engaged, `pace [off] ...` when none is |
 | first use menu | present on first call, absent on second; marker written |
 | first use + `template L2` | no menu; marker written |

@@ -1286,6 +1286,14 @@ class SummaryLine(unittest.TestCase):
         dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
         self.assertEqual(self._line(dec, self._ctl(wk=(True, False))), 'pace [L3] 5h:97% reset 12m | wk:45% -25%')
 
+    def test_level3_showsTheFiveHourCountdownEvenWhenOnlyTheWeekIsEngaged(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, {'wk': {'on': True}}), 'pace [L3] 5h:97% reset 12m | wk:45% -25%')
+
+    def test_level3_withNothingEngaged_isTheTagOnly(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, {}), 'pace [off]')
+
     def test_axisWithBothOffIsLeftOut(self):
         self.assertEqual(self._line(ctl=self._ctl(wk=(False, False))), 'pace [L1] 5h:24% 18>21%/h reset 1h50m')
 
@@ -1379,6 +1387,15 @@ class FirstUse(unittest.TestCase):
 
     def test_typedForm_showsItToo(self):
         self.assertIn('first use', self._reason('pace on'))
+
+    def test_guideFirst_showsTheMenuAfterThePathAndMarks(self):
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_NO_OPEN': '1'}):
+            first = self._reason('/pace guide')
+            second = self._reason('/pace guide')
+        self.assertTrue(first.startswith('pace guide: '), first)
+        self.assertIn('first use', first)
+        self.assertTrue(self.marker.exists())
+        self.assertNotIn('first use', second)
 
     def test_templateChoiceFirst_marksWithoutTheMenu(self):
         self.assertNotIn('first use', self._reason('/pace template L2'))
