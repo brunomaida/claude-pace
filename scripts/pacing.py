@@ -11,7 +11,7 @@ Subcommands (stdin = hook / statusLine JSON):
   prompt       UserPromptSubmit: handle `/pace ...`, emit one line on level transitions
   agent-start  SubagentStart: confirm a claimed subagent slot
   agent-done   SubagentStop: release one confirmed subagent slot
-  ctl <cmd>    CLI: [wk|5h] on | off | measure [on|off]; up | down | auto | reset | status | guide | template <name>|off | setup
+  ctl <cmd>    CLI: [wk|5h] on | off | measure [on|off]; up | down | auto | reset | status | guide | template <name>|after|off | setup
                `guide` prints the path of the manual that ships with pace and opens it in the browser
                `setup` writes `statusLine` (a plugin cannot) pointing at a stable copy; `statusline --full --standalone`
                is pace as the whole status line (layout L1 until `pace template` chooses another);
@@ -60,7 +60,7 @@ DEFAULTS = {
 AXES = ('wk', 'h5')                 # ctl.json keys; `h5` is shown as `5h`
 PACE_RE = re.compile(
     r'^\s*/?pace(?:\s+(?:(wk|weekly|5h)\s+(on|off|measure(?:\s+(?:on|off))?)'
-    r'|(on|off|up|down|auto|reset|status|brief|guide|setup(?:\s+silent)?|measure(?:\s+(?:on|off))?|template(?:\s+(?:l1|l2|c1|c2|off))?)))?\s*$', re.I)
+    r'|(on|off|up|down|auto|reset|status|brief|guide|setup(?:\s+silent)?|measure(?:\s+(?:on|off))?|template(?:\s+(?:l1|l2|c1|c2|off|after))?)))?\s*$', re.I)
 TEMPLATES = ('L1', 'L2', 'C1', 'C2')  # status line layouts chosen with `pace template <name>|off`; none = shell layout
 SEGMENT_MARK = '\x01'                 # `statusline --full` prefix that tells the shell "no template, this is the segment"
 NO_DATA_HINT = 'no usage data: needs Claude Code 2.1.80+, Pro/Max and the pace status line (/pace setup)'
@@ -406,7 +406,8 @@ def format_status(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) 
     mult = cfg['steps'][min(max(c.get('step', default_step(cfg)), 0), len(cfg['steps']) - 1)]
     sw = lambda a, name: f'{name} reduction {"on" if c[a]["on"] else "off"} measure {"on" if c[a]["measure"] else "off"}'
     bits = [sw('wk', 'wk'), sw('h5', '5h'), render_segment(dec, c, cfg, now, active),
-            f'template {template_of(c) or "off"}', f'mode {"manual" if is_manual(c, cfg) else "auto"}',
+            f'template {template_of(c) or ("after" if after_of(c) else "off")}',
+            f'mode {"manual" if is_manual(c, cfg) else "auto"}',
             f'step x{mult:g}', f'r={cfg["r_pp7_per_pp5"]}', f'pace v{VERSION}']
     if dec.get('state') == 'na':
         bits.append(NO_DATA_HINT)
@@ -474,6 +475,11 @@ def template_of(ctl: dict) -> str:
     """The chosen layout, or '' (none): the status line script then keeps its own three lines."""
     t = str(ctl.get('template') or '').upper()
     return t if t in TEMPLATES else ''
+
+
+def after_of(ctl: dict) -> bool:
+    """`pace template after`: the summary line goes after the shell's own lines instead of a layout."""
+    return str(ctl.get('template') or '').upper() == 'AFTER'
 
 
 def bar(pct: float) -> str:

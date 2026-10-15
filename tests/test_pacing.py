@@ -539,6 +539,21 @@ class Templates(unittest.TestCase):
         self.assertEqual(pacing.apply_ctl('tpl-l2', {}, CFG)['template'], 'L2')
         self.assertEqual(pacing.template_of(pacing.apply_ctl('tpl-off', {'template': 'L2'}, CFG)), '')
 
+    def test_promptParse_templateAfter(self):
+        p = pacing.parse_pace_prompt
+        self.assertEqual([p('/pace template after'), p('pace TEMPLATE After')], ['tpl-after', 'tpl-after'])
+        self.assertEqual(pacing.apply_ctl('tpl-after', {}, CFG)['template'], 'AFTER')
+
+    def test_afterIsNotAFullLayout(self):
+        self.assertEqual(pacing.template_of({'template': 'AFTER'}), '')
+        self.assertTrue(pacing.after_of({'template': 'AFTER'}))
+        self.assertEqual([pacing.after_of({}), pacing.after_of({'template': 'L2'}), pacing.after_of({'template': 'off'})],
+                         [False, False, False])
+
+    def test_statusNamesTheAfterTemplate(self):
+        out = pacing.format_status({'state': 'na'}, {'template': 'AFTER'}, CFG, NOW)
+        self.assertIn('| template after |', out)
+
     def test_weeklyOnly_delayBelongsToTheWeekNotTheFiveHourGroup(self):
         dec = dict(self.DEC, delay_5h=0)
         ctl = {'wk': {'on': True}}
