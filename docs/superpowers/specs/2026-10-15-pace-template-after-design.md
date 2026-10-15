@@ -52,7 +52,7 @@ pace [L2] 5h:31% 44>18%/h cut 59% reset 2h10m | wk:41% 4%/h -2%
 
 - An axis appears only when `on` or `measure` (same rule as `format_brief`).
 - `[L3]` (5h nearly full): the 5h block is `5h:<used>% reset <left>`; no rate, no cut.
-- No sample (`state` `na`/`stale`): `pace [off] no usage sample yet`.
+- No sample (`state` `na`/`stale`): `pace <tag> no usage sample yet`, the tag being the segment's (`[off]` while nothing is engaged, `[n/a]` or `[?]` otherwise).
 - No axis shown and a sample exists: `pace <tag>`.
 
 ### First use
@@ -93,7 +93,7 @@ After setting `AFTER`, the command prints the one change the script needs: pass 
 | `format_line` both axes behind | contains `5h:`, `>`, `cut`, `reset`, `wk:` |
 | `format_line` one axis off | that axis absent |
 | `format_line` level 3 | no rate, no cut |
-| `format_line` no sample | `pace [off] no usage sample yet` |
+| `format_line` no sample | `pace [n/a] no usage sample yet` when an axis is engaged, `pace [off] ...` when none is |
 | first use menu | present on first call, absent on second; marker written |
 | first use + `template L2` | no menu; marker written |
 | first use + `template` already set | no menu; marker written |
