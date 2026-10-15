@@ -1,5 +1,7 @@
 # pace
 
+**Cadence for Claude Code: spread your 5 h and weekly limits instead of hitting the ceiling.**
+
 - **Heavy Pro/Max use:** a gauge with limits for the 5 h and weekly windows.
 - **Many fronts at once:** parallel agents share one steady cadence.
 - **Same quota, other tools:** heavy Desktop/Design slows Claude Code.
