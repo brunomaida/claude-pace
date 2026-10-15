@@ -1289,6 +1289,54 @@ class SummaryLine(unittest.TestCase):
         self.assertNotIn('\n', self._line())
 
 
+class AfterContract(unittest.TestCase):
+    """`statusline --full --after`: the caller says it understands APPEND_MARK; without it nothing changes."""
+    RAW = {'session_id': 's', 'model': {'display_name': 'Claude Opus'},
+           'rate_limits': {'five_hour': {'used_percentage': 40, 'resets_at': 1791648600},
+                           'seven_day': {'used_percentage': 71, 'resets_at': RESET7}}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sd = Path(self.tmp.name) / 'state'
+        self.sd.mkdir()
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': str(self.sd)})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _full(self, template, after, default=''):
+        ctl = {'wk': {'on': True}}
+        if template:
+            ctl['template'] = template
+        (self.sd / 'ctl.json').write_text(json.dumps(ctl), encoding='utf-8')
+        return pacing.cmd_statusline_full(self.RAW, CFG, NOW, '', default, after)
+
+    def test_afterWithTheFlag_isTheAppendMarkAndOneLine(self):
+        out = self._full('AFTER', True)
+        self.assertTrue(out.startswith(pacing.APPEND_MARK + 'pace ['), out)
+        self.assertNotIn('\n', out)
+
+    def test_afterWithoutTheFlag_isTheOldSegment(self):
+        out = self._full('AFTER', False)
+        self.assertTrue(out.startswith(pacing.SEGMENT_MARK + 'cadence:'), out)
+
+    def test_noTemplateWithTheFlag_isTheOldSegment(self):
+        self.assertTrue(self._full('', True).startswith(pacing.SEGMENT_MARK + 'cadence:'))
+
+    def test_aFullLayoutWinsOverTheFlag(self):
+        out = self._full('L2', True)
+        self.assertNotIn(pacing.APPEND_MARK, out)
+        self.assertNotIn(pacing.SEGMENT_MARK, out)
+
+    def test_standalone_ignoresAfter(self):
+        out = self._full('AFTER', True, default='L1')
+        self.assertNotIn(pacing.APPEND_MARK, out)
+        self.assertNotIn(pacing.SEGMENT_MARK, out)
+        self.assertIn('Opus', out)
+
+
 class Cli(unittest.TestCase):
     """Process-level checks: default OFF, fail-open, zero output when idle."""
 
@@ -1330,6 +1378,14 @@ class Cli(unittest.TestCase):
         self.assertEqual((code, out), (0, ''))
         self.assertTrue(list(Path(self.tmp.name).glob('samples.s1.jsonl')))
         self.assertTrue((Path(self.tmp.name) / 'decision.json').exists())
+
+    def test_statuslineFullAfter_printsTheAppendMark(self):
+        (Path(self.tmp.name) / 'ctl.json').write_text(json.dumps({'template': 'AFTER', 'wk': {'on': True}}),
+                                                      encoding='utf-8')
+        code, out = self._run('statusline', self._status(), '--full', '--after')
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith('\x02pace ['), repr(out))
+        self.assertNotIn('\n', out)
 
     def test_statusline_withoutRateLimits_failsOpen(self):
         code, out = self._run('statusline', {'session_id': 's1'})

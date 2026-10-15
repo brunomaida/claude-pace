@@ -7,6 +7,8 @@ Subcommands (stdin = hook / statusLine JSON):
                statusLine JSON plus the repo text in `CLAUDE_STATUS_GIT` (one repo per line); while no template is
                chosen it prints the `cadence: ...` segment (the shell keeps its own layout, one python start),
                on a bad payload nothing. The template lives in ctl.json, as volatile as the on/off switches
+               `--full --after`: with `pace template after` the reply is `\x02` + one summary line, for a shell that
+               prints it after its own lines; without `--after` the reply is the `\x01` segment as before
   enforce      PreToolUse (all tools): sleep the decided delay; at level>=2 cap concurrent subagents
   prompt       UserPromptSubmit: handle `/pace ...`, emit one line on level transitions
   agent-start  SubagentStart: confirm a claimed subagent slot
@@ -63,6 +65,7 @@ PACE_RE = re.compile(
     r'|(on|off|up|down|auto|reset|status|brief|guide|setup(?:\s+silent)?|measure(?:\s+(?:on|off))?|template(?:\s+(?:l1|l2|c1|c2|off|after))?)))?\s*$', re.I)
 TEMPLATES = ('L1', 'L2', 'C1', 'C2')  # status line layouts chosen with `pace template <name>|off`; none = shell layout
 SEGMENT_MARK = '\x01'                 # `statusline --full` prefix that tells the shell "no template, this is the segment"
+APPEND_MARK = '\x02'                  # `statusline --full --after` prefix: the rest is one line for after the shell's own
 NO_DATA_HINT = 'no usage data: needs Claude Code 2.1.80+, Pro/Max and the pace status line (/pace setup)'
 _DEFAULT_STATE = os.path.join(tempfile.gettempdir(), 'claude-pacing')
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
@@ -891,16 +894,22 @@ def cmd_statusline(raw: dict, cfg: dict, now: float) -> str:
     return render_segment(dec, ctl, cfg, now, active)
 
 
-def cmd_statusline_full(raw: dict, cfg: dict, now: float, git: str, default_template: str = '') -> str:
+def cmd_statusline_full(raw: dict, cfg: dict, now: float, git: str, default_template: str = '',
+                        after: bool = False) -> str:
     """The whole status line in the template chosen with `pace template`; `git` is the repo text from the shell.
 
     With no template it returns the `cadence: ...` segment behind SEGMENT_MARK instead, so the shell keeps its
     own layout, starts python once per refresh, and a model name can never be mistaken for the segment.
     `default_template` is the layout used when none is chosen (`--standalone`: pace is the whole status line).
+    `after` is the caller declaring it understands APPEND_MARK: with `template after` chosen the reply is
+    APPEND_MARK + one summary line for the shell to print after its own lines. Without the flag `after` behaves
+    like no template, so a script written before it never prints a payload it does not know.
     """
     dec, ctl, active = _statusline_state(raw, cfg, now)
     name = template_of(ctl) or default_template
     if not name:
+        if after and after_of(ctl):
+            return APPEND_MARK + format_line(dec, ctl, cfg, now, active)
         return SEGMENT_MARK + render_segment(dec, ctl, cfg, now, active)
     return render_template(name, view_from_raw(raw, git, now), dec, ctl, cfg, now, active)
 
@@ -1241,7 +1250,7 @@ def main(argv: list[str]) -> int:
         if sub == 'statusline' and full:
             if valid:  # no output makes the shell script fall back to its own layout
                 print(cmd_statusline_full(raw, cfg, now, os.environ.get('CLAUDE_STATUS_GIT', ''),
-                                          'L1' if '--standalone' in argv[2:] else ''))
+                                          'L1' if '--standalone' in argv[2:] else '', '--after' in argv[2:]))
         elif sub == 'statusline' and '--record-only' in argv[2:]:
             _statusline_state(raw, cfg, now)  # sample + decision for `enforce`, no output: the status line is untouched
         elif sub == 'statusline':
