@@ -1,6 +1,6 @@
 ---
-description: Pacing cadencer control (on|off|measure per axis wk|5h, up|down|auto|reset|status|brief|guide|setup [silent], template L1|L2|C1|C2|off)
-argument-hint: [wk|5h] on | off | measure [on|off] | up | down | auto | reset | status | brief | guide | setup [silent] | template [L1|L2|C1|C2|off]
+description: Pacing cadencer control (on|off|measure per axis wk|5h, up|down|auto|reset|status|brief|guide|setup [silent], template L1|L2|C1|C2|after|off)
+argument-hint: [wk|5h] on | off | measure [on|off] | up | down | auto | reset | status | brief | guide | setup [silent] | template [L1|L2|C1|C2|after|off]
 disable-model-invocation: true
 allowed-tools: Bash(python3 -S *pacing.py* ctl*), Bash(python -S *pacing.py* ctl*), Bash(py -3 -S *pacing.py* ctl*)
 ---

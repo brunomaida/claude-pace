@@ -7,11 +7,13 @@ Subcommands (stdin = hook / statusLine JSON):
                statusLine JSON plus the repo text in `CLAUDE_STATUS_GIT` (one repo per line); while no template is
                chosen it prints the `cadence: ...` segment (the shell keeps its own layout, one python start),
                on a bad payload nothing. The template lives in ctl.json, as volatile as the on/off switches
+               `--full --after`: with `pace template after` the reply is `\x02` + one summary line, for a shell that
+               prints it after its own lines; without `--after` the reply is the `\x01` segment as before
   enforce      PreToolUse (all tools): sleep the decided delay; at level>=2 cap concurrent subagents
   prompt       UserPromptSubmit: handle `/pace ...`, emit one line on level transitions
   agent-start  SubagentStart: confirm a claimed subagent slot
   agent-done   SubagentStop: release one confirmed subagent slot
-  ctl <cmd>    CLI: [wk|5h] on | off | measure [on|off]; up | down | auto | reset | status | guide | template <name>|off | setup
+  ctl <cmd>    CLI: [wk|5h] on | off | measure [on|off]; up | down | auto | reset | status | guide | template <name>|after|off | setup
                `guide` prints the path of the manual that ships with pace and opens it in the browser
                `setup` writes `statusLine` (a plugin cannot) pointing at a stable copy; `statusline --full --standalone`
                is pace as the whole status line (layout L1 until `pace template` chooses another);
@@ -29,7 +31,7 @@ import datetime, filecmp, glob, json, os, pathlib, re, shutil, sys, tempfile, ti
 
 # Version of pace itself, not a roadmap phase: every change or request adds 1 to the minor counter (0.1, 0.2, ...
 # 0.9, 0.10); the major moves only on an explicit release or macro request. The manual's brand tag must match.
-VERSION = '0.12'
+VERSION = '0.13'
 
 DEFAULTS = {
     'ceiling_pct': 95,                  # share of the weekly quota the budget may reach (5% reserve)
@@ -60,10 +62,20 @@ DEFAULTS = {
 AXES = ('wk', 'h5')                 # ctl.json keys; `h5` is shown as `5h`
 PACE_RE = re.compile(
     r'^\s*/?pace(?:\s+(?:(wk|weekly|5h)\s+(on|off|measure(?:\s+(?:on|off))?)'
-    r'|(on|off|up|down|auto|reset|status|brief|guide|setup(?:\s+silent)?|measure(?:\s+(?:on|off))?|template(?:\s+(?:l1|l2|c1|c2|off))?)))?\s*$', re.I)
+    r'|(on|off|up|down|auto|reset|status|brief|guide|setup(?:\s+silent)?|measure(?:\s+(?:on|off))?|template(?:\s+(?:l1|l2|c1|c2|off|after))?)))?\s*$', re.I)
 TEMPLATES = ('L1', 'L2', 'C1', 'C2')  # status line layouts chosen with `pace template <name>|off`; none = shell layout
 SEGMENT_MARK = '\x01'                 # `statusline --full` prefix that tells the shell "no template, this is the segment"
+APPEND_MARK = '\x02'                  # `statusline --full --after` prefix: the rest is one line for after the shell's own
 NO_DATA_HINT = 'no usage data: needs Claude Code 2.1.80+, Pro/Max and the pace status line (/pace setup)'
+WELCOME_MENU = '\n'.join((
+    'pace: first use. Choose how it shows on your status line:',
+    '  /pace template L2      ready layout (L1 L2 C1 C2)',
+    '  /pace template off     keep your status line as it is',
+    '  /pace template after   add one summary line after yours'))
+AFTER_NOTE = ('pace template after: call `statusline --full --after` in your script (plain `statusline` ignores '
+              'the flag). Its first byte says what follows: \\x02 = one line to print after your own lines, '
+              '\\x01 = the cadence segment, anything else = a whole layout to print as it is. '
+              'Until then nothing changes.')
 _DEFAULT_STATE = os.path.join(tempfile.gettempdir(), 'claude-pacing')
 MAX_CAP_S = 55                      # settings.json PreToolUse timeout is 60 s: a longer sleep would be killed
 
@@ -406,7 +418,8 @@ def format_status(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) 
     mult = cfg['steps'][min(max(c.get('step', default_step(cfg)), 0), len(cfg['steps']) - 1)]
     sw = lambda a, name: f'{name} reduction {"on" if c[a]["on"] else "off"} measure {"on" if c[a]["measure"] else "off"}'
     bits = [sw('wk', 'wk'), sw('h5', '5h'), render_segment(dec, c, cfg, now, active),
-            f'template {template_of(c) or "off"}', f'mode {"manual" if is_manual(c, cfg) else "auto"}',
+            f'template {template_of(c) or ("after" if after_of(c) else "off")}',
+            f'mode {"manual" if is_manual(c, cfg) else "auto"}',
             f'step x{mult:g}', f'r={cfg["r_pp7_per_pp5"]}', f'pace v{VERSION}']
     if dec.get('state') == 'na':
         bits.append(NO_DATA_HINT)
@@ -468,12 +481,49 @@ def format_brief(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) -
     return '\n'.join(lines)
 
 
+def format_line(dec: dict, ctl: dict, cfg: dict, now: float, active: int = 0) -> str:
+    """One line for `template after`: the state tag, then a 5h and a week block for the observed axes."""
+    try:
+        c = norm_ctl(ctl)
+        f = cadence_fields(dec, c, cfg, now, active)
+        head = 'pace ' + f['tag']
+        if dec.get('state') in ('na', 'stale'):
+            return head + ' no usage sample yet'
+        blocks = []
+        full5h = dec.get('level') == 3 and bool(engaged_axes(c))  # the cap is the 5h window's: say when it ends
+        for ax, label, used_k, reset_k in (('h5', '5h', 'u5', 'r5'), ('wk', 'wk', 'u7', None)):
+            if not (c[ax]['on'] or c[ax]['measure'] or (ax == 'h5' and full5h)):
+                continue
+            items = []
+            if dec.get(used_k) is not None:
+                items.append(f'{dec[used_k]:.0f}%')
+            if f[ax]:
+                rate, cut = f[ax]
+                items.append(f'{rate}%/h')
+                if cut:
+                    items.append('cut ' + cut.lstrip('-'))
+            if ax == 'wk' and f['lead']:
+                items.append(f['lead'])
+            if reset_k and dec.get(reset_k):
+                items.append('reset ' + fmt_left(max(0, dec[reset_k] - now), True))
+            if items:
+                blocks.append(f'{label}:' + ' '.join(items))
+        return head + (' ' + ' | '.join(blocks) if blocks else '')
+    except (KeyError, TypeError, ValueError):
+        return 'pace [off]'
+
+
 # ---- status line templates ------------------------------------------------
 
 def template_of(ctl: dict) -> str:
     """The chosen layout, or '' (none): the status line script then keeps its own three lines."""
     t = str(ctl.get('template') or '').upper()
     return t if t in TEMPLATES else ''
+
+
+def after_of(ctl: dict) -> bool:
+    """`pace template after`: the summary line goes after the shell's own lines instead of a layout."""
+    return str(ctl.get('template') or '').upper() == 'AFTER'
 
 
 def bar(pct: float) -> str:
@@ -854,16 +904,22 @@ def cmd_statusline(raw: dict, cfg: dict, now: float) -> str:
     return render_segment(dec, ctl, cfg, now, active)
 
 
-def cmd_statusline_full(raw: dict, cfg: dict, now: float, git: str, default_template: str = '') -> str:
+def cmd_statusline_full(raw: dict, cfg: dict, now: float, git: str, default_template: str = '',
+                        after: bool = False) -> str:
     """The whole status line in the template chosen with `pace template`; `git` is the repo text from the shell.
 
     With no template it returns the `cadence: ...` segment behind SEGMENT_MARK instead, so the shell keeps its
     own layout, starts python once per refresh, and a model name can never be mistaken for the segment.
     `default_template` is the layout used when none is chosen (`--standalone`: pace is the whole status line).
+    `after` is the caller declaring it understands APPEND_MARK: with `template after` chosen the reply is
+    APPEND_MARK + one summary line for the shell to print after its own lines. Without the flag `after` behaves
+    like no template, so a script written before it never prints a payload it does not know.
     """
     dec, ctl, active = _statusline_state(raw, cfg, now)
     name = template_of(ctl) or default_template
     if not name:
+        if after and after_of(ctl):
+            return APPEND_MARK + format_line(dec, ctl, cfg, now, active)
         return SEGMENT_MARK + render_segment(dec, ctl, cfg, now, active)
     return render_template(name, view_from_raw(raw, git, now), dec, ctl, cfg, now, active)
 
@@ -1094,6 +1150,8 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
         else:
             out.append(f'To add the pace segment, feed it the same stdin JSON: {py} -S "{posix(target)}" statusline '
                        '(prints `cadence: ...`).')
+            out.append('To show one summary line after your own lines instead, run /pace template after and '
+                       'follow the note it prints.')
     else:
         backup = None
         if os.path.exists(settings):
@@ -1117,15 +1175,45 @@ def _setup(cfg_dir: str, src: str, silent: bool = False) -> str:
     return '\n'.join(out)
 
 
+def welcome_marker() -> str:
+    """Persistent (config dir), unlike ctl.json: a temp-dir marker would bring the menu back after every reboot."""
+    return os.path.join(config_dir(), 'config', 'pacing.welcomed')
+
+
+def first_use_menu(cmd: str, ctl: dict) -> str:
+    """The one-time menu for the first `/pace`, or ''. A template choice, `setup` or a template already set are
+    the answer itself: they only write the marker. A marker that cannot be written leaves the menu showing."""
+    marker = welcome_marker()
+    if os.path.exists(marker):
+        return ''
+    try:
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        _write_text(marker, str(int(time.time())))
+    except OSError:
+        pass
+    answered = cmd.startswith('tpl-') or cmd in ('setup', 'setup-silent') or bool(ctl.get('template'))
+    return '' if answered else WELCOME_MENU
+
+
+def _reply(cmd: str, ctl: dict, text: str) -> str:
+    """A command's output plus what only some commands add: the `after` script note, the first-use menu."""
+    extra = [AFTER_NOTE] if cmd == 'tpl-after' else []
+    menu = first_use_menu(cmd, ctl)
+    if menu:
+        extra.append(menu)
+    return '\n'.join([text] + extra)
+
+
 def cmd_prompt(raw: dict, cfg: dict, now: float):
     sd = state_dir()
     cmd = parse_pace_prompt(raw.get('prompt') or '')
     ctl = read_ctl(sd)
     dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
     if cmd in ('setup', 'setup-silent'):
+        first_use_menu(cmd, ctl)  # `setup` is one of the menu's answers: it marks, it shows nothing
         return {'decision': 'block', 'reason': cmd_setup(config_dir(), __file__, cmd == 'setup-silent')}
     if cmd == 'guide':
-        return {'decision': 'block', 'reason': cmd_guide(__file__)}
+        return {'decision': 'block', 'reason': _reply(cmd, ctl, cmd_guide(__file__))}
     refresh_stable_copy(config_dir(), __file__)
     if cmd:
         if cmd not in ('status', 'brief'):
@@ -1133,7 +1221,8 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
             state_dir(create=True)
             _write_json(os.path.join(sd, 'ctl.json'), ctl)
         show = format_brief if cmd == 'brief' else format_status
-        return {'decision': 'block', 'reason': show(dec, ctl, cfg, now, count_agents(sd, now, cfg))}
+        text = show(dec, ctl, cfg, now, count_agents(sd, now, cfg))
+        return {'decision': 'block', 'reason': _reply(cmd, ctl, text)}
     state = dec.get('state', 'na')
     acting = acting_axes(ctl)
     if acting and state in ('ok', 'L1', 'L2', 'L3') and ctl.get('notified') != state \
@@ -1159,10 +1248,11 @@ def cmd_prompt(raw: dict, cfg: dict, now: float):
 def _ctl(argv: list[str], cfg: dict, now: float) -> int:
     cmd = parse_pace_prompt('pace ' + ' '.join(argv[2:])) or 'status'
     if cmd in ('setup', 'setup-silent'):
+        first_use_menu(cmd, {})
         print(cmd_setup(config_dir(), __file__, cmd == 'setup-silent'))
         return 0
     if cmd == 'guide':
-        print(cmd_guide(__file__))
+        print(_reply(cmd, read_ctl(state_dir()), cmd_guide(__file__)))
         return 0
     sd = state_dir(create=True)
     view_only = cmd in ('status', 'brief')
@@ -1171,7 +1261,7 @@ def _ctl(argv: list[str], cfg: dict, now: float) -> int:
         _write_json(os.path.join(sd, 'ctl.json'), ctl)
     dec = _read_json(os.path.join(sd, 'decision.json')) or {'state': 'na'}
     show = format_brief if cmd == 'brief' else format_status
-    print(show(dec, ctl, cfg, now, count_agents(sd, now, cfg)))
+    print(_reply(cmd, ctl, show(dec, ctl, cfg, now, count_agents(sd, now, cfg))))
     return 0
 
 
@@ -1204,7 +1294,7 @@ def main(argv: list[str]) -> int:
         if sub == 'statusline' and full:
             if valid:  # no output makes the shell script fall back to its own layout
                 print(cmd_statusline_full(raw, cfg, now, os.environ.get('CLAUDE_STATUS_GIT', ''),
-                                          'L1' if '--standalone' in argv[2:] else ''))
+                                          'L1' if '--standalone' in argv[2:] else '', '--after' in argv[2:]))
         elif sub == 'statusline' and '--record-only' in argv[2:]:
             _statusline_state(raw, cfg, now)  # sample + decision for `enforce`, no output: the status line is untouched
         elif sub == 'statusline':

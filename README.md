@@ -33,6 +33,8 @@ Then, once:
 
 Axes start OFF (observe only). `/pace on` turns both on; `/pace wk on` and `/pace 5h on` turn one.
 
+The first `/pace` command after install (other than `setup` and `template`) prints a one-time menu with the three status line choices: a ready layout, keep yours (`/pace template off`), or one summary line after yours (`/pace template after`). `/pace setup` on a status line of your own points at `after` too. `after` needs your script to call `statusline --full --after` and look at the first byte of the reply: `\x02` is one line to print after your own lines, `\x01` is the cadence segment, anything else is a whole layout to print as it is. A script that does not pass `--after` is unaffected.
+
 ## Commands
 
 | Command | Does |
@@ -43,7 +45,7 @@ Axes start OFF (observe only). `/pace on` turns both on; `/pace wk on` and `/pac
 | `/pace [wk\|5h] on` / `off` | apply or stop pacing, per axis or both |
 | `/pace [wk\|5h] measure [on\|off]` | show the proposed reduction without applying it |
 | `/pace up` / `down` / `auto` / `reset` | make the cadence stricter or looser, or return to the suggestion |
-| `/pace template L1\|L2\|C1\|C2\|off` | choose the status line layout |
+| `/pace template L1\|L2\|C1\|C2\|after\|off` | choose the status line layout; `after` adds one summary line after your own status line |
 | `/pace setup [silent]` | install the status line entry |
 
 You can also type `pace on`, `pace status` and the rest without the slash; the prompt hook handles them.

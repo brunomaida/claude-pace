@@ -1,12 +1,18 @@
 """Behaviour tests for hooks/pacing.py (weekly pacing cadencer; default OFF)."""
 from __future__ import annotations
-import datetime, json, os, subprocess, sys, tempfile, time, unittest
+import contextlib, datetime, io, json, os, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path[:0] = [str(HOOKS)]
 import pacing  # noqa: E402
+
+# A pre-written first-use marker in a private config dir: no test below sees the menu, and none touches ~/.claude.
+_CFG = tempfile.TemporaryDirectory()
+(Path(_CFG.name) / 'config').mkdir()
+(Path(_CFG.name) / 'config' / 'pacing.welcomed').write_text('0', encoding='utf-8')
+os.environ['CLAUDE_CONFIG_DIR'] = _CFG.name
 
 # Reset Thu 2026-10-15 09:00Z; window = Thu 2026-10-08 09:00Z .. reset; "now" = Sat 2026-10-10 14:19Z.
 RESET7 = 1792054800
@@ -539,6 +545,21 @@ class Templates(unittest.TestCase):
         self.assertEqual(pacing.apply_ctl('tpl-l2', {}, CFG)['template'], 'L2')
         self.assertEqual(pacing.template_of(pacing.apply_ctl('tpl-off', {'template': 'L2'}, CFG)), '')
 
+    def test_promptParse_templateAfter(self):
+        p = pacing.parse_pace_prompt
+        self.assertEqual([p('/pace template after'), p('pace TEMPLATE After')], ['tpl-after', 'tpl-after'])
+        self.assertEqual(pacing.apply_ctl('tpl-after', {}, CFG)['template'], 'AFTER')
+
+    def test_afterIsNotAFullLayout(self):
+        self.assertEqual(pacing.template_of({'template': 'AFTER'}), '')
+        self.assertTrue(pacing.after_of({'template': 'AFTER'}))
+        self.assertEqual([pacing.after_of({}), pacing.after_of({'template': 'L2'}), pacing.after_of({'template': 'off'})],
+                         [False, False, False])
+
+    def test_statusNamesTheAfterTemplate(self):
+        out = pacing.format_status({'state': 'na'}, {'template': 'AFTER'}, CFG, NOW)
+        self.assertIn('| template after |', out)
+
     def test_weeklyOnly_delayBelongsToTheWeekNotTheFiveHourGroup(self):
         dec = dict(self.DEC, delay_5h=0)
         ctl = {'wk': {'on': True}}
@@ -784,6 +805,14 @@ class Setup(unittest.TestCase):
         self.assertEqual(out['decision'], 'block')
         self.assertIn('pace setup:', out['reason'])
         self.assertTrue((self.cfg_dir / 'settings.json').exists())
+
+    def test_keptStatusLine_pointsAtTemplateAfter(self):
+        mine = {'statusLine': {'type': 'command', 'command': 'bash my-line.sh'}}
+        self.settings.write_text(json.dumps(mine), encoding='utf-8')
+        out = self._run()
+        self.assertIn('statusLine kept', out)
+        self.assertIn('/pace template after', out)
+        self.assertEqual(json.loads(self.settings.read_text(encoding='utf-8')), mine)
 
     def test_configDir_followsTheEnvironment(self):
         with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.cfg_dir)}):
@@ -1230,6 +1259,180 @@ class Brief(unittest.TestCase):
         self.assertEqual(pacing.apply_ctl('brief', c, CFG)['step'], 3)
 
 
+class SummaryLine(unittest.TestCase):
+    """`template after`: one line, same vocabulary as the `cadence:` segment, printed after the user's lines."""
+    _dec = Brief._dec
+    _ctl = Brief._ctl
+
+    def _line(self, dec=None, ctl=None):
+        return pacing.format_line(dec or self._dec(), self._ctl() if ctl is None else ctl, CFG, NOW)
+
+    def test_h5ActingWeekMeasuring_showsBothBlocks(self):
+        self.assertEqual(self._line(), 'pace [L1] 5h:24% 18>21%/h reset 1h50m | wk:45% 2%/h -25%')
+
+    def test_behindOnBoth_showsCutsAndTheWeeklyDeviation(self):
+        dec = self._dec(lead=8.0, deficit5=2.0, now_rate5=44.0, need_rate5=18.0, reduce5_pct=59, u5=31, u7=41,
+                        now_rate=4.0, need_rate=3.0)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))),
+                         'pace [L1] 5h:31% 44>18%/h cut 59% reset 1h50m | wk:41% 4>3%/h cut 10% +8%')
+
+    def test_leadInsideTheDeadband_isLeftOut(self):
+        dec = self._dec(lead=-2.0, deficit5=2.0, now_rate5=44.0, need_rate5=18.0, reduce5_pct=59, u5=31, u7=41,
+                        now_rate=4.2, reduce_pct=0)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))),
+                         'pace [L1] 5h:31% 44>18%/h cut 59% reset 1h50m | wk:41% 4%/h')
+
+    def test_level3_hasNoRateAndNoCut(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, self._ctl(wk=(True, False))), 'pace [L3] 5h:97% reset 12m | wk:45% -25%')
+
+    def test_level3_showsTheFiveHourCountdownEvenWhenOnlyTheWeekIsEngaged(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, {'wk': {'on': True}}), 'pace [L3] 5h:97% reset 12m | wk:45% -25%')
+
+    def test_level3_withNothingEngaged_isTheTagOnly(self):
+        dec = self._dec(state='L3', level=3, u5=97, r5=NOW + 720)
+        self.assertEqual(self._line(dec, {}), 'pace [off]')
+
+    def test_axisWithBothOffIsLeftOut(self):
+        self.assertEqual(self._line(ctl=self._ctl(wk=(False, False))), 'pace [L1] 5h:24% 18>21%/h reset 1h50m')
+
+    def test_nothingEngaged_isTheTagOnly(self):
+        self.assertEqual(self._line(self._dec(state='ok', level=0, lead=0.0), {}), 'pace [off]')
+
+    def test_noSample_saysSoWithTheSegmentTag(self):
+        self.assertEqual(self._line({'state': 'na'}, self._ctl()), 'pace [n/a] no usage sample yet')
+        self.assertEqual(self._line({'state': 'na'}, {}), 'pace [off] no usage sample yet')
+
+    def test_partialDecision_neverRaises(self):
+        self.assertEqual(self._line({'state': 'L1'}, self._ctl()), 'pace [off]')
+
+    def test_isOneLine(self):
+        self.assertNotIn('\n', self._line())
+
+
+class AfterContract(unittest.TestCase):
+    """`statusline --full --after`: the caller says it understands APPEND_MARK; without it nothing changes."""
+    RAW = {'session_id': 's', 'model': {'display_name': 'Claude Opus'},
+           'rate_limits': {'five_hour': {'used_percentage': 40, 'resets_at': 1791648600},
+                           'seven_day': {'used_percentage': 71, 'resets_at': RESET7}}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sd = Path(self.tmp.name) / 'state'
+        self.sd.mkdir()
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': str(self.sd)})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _full(self, template, after, default=''):
+        ctl = {'wk': {'on': True}}
+        if template:
+            ctl['template'] = template
+        (self.sd / 'ctl.json').write_text(json.dumps(ctl), encoding='utf-8')
+        return pacing.cmd_statusline_full(self.RAW, CFG, NOW, '', default, after)
+
+    def test_afterWithTheFlag_isTheAppendMarkAndOneLine(self):
+        out = self._full('AFTER', True)
+        self.assertTrue(out.startswith(pacing.APPEND_MARK + 'pace ['), out)
+        self.assertNotIn('\n', out)
+
+    def test_afterWithoutTheFlag_isTheOldSegment(self):
+        out = self._full('AFTER', False)
+        self.assertTrue(out.startswith(pacing.SEGMENT_MARK + 'cadence:'), out)
+
+    def test_noTemplateWithTheFlag_isTheOldSegment(self):
+        self.assertTrue(self._full('', True).startswith(pacing.SEGMENT_MARK + 'cadence:'))
+
+    def test_aFullLayoutWinsOverTheFlag(self):
+        out = self._full('L2', True)
+        self.assertNotIn(pacing.APPEND_MARK, out)
+        self.assertNotIn(pacing.SEGMENT_MARK, out)
+
+    def test_standalone_ignoresAfter(self):
+        out = self._full('AFTER', True, default='L1')
+        self.assertNotIn(pacing.APPEND_MARK, out)
+        self.assertNotIn(pacing.SEGMENT_MARK, out)
+        self.assertIn('Opus', out)
+
+
+class FirstUse(unittest.TestCase):
+    """The one-time menu and the `after` note that a command's reply can carry."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.marker = self.root / 'config' / 'pacing.welcomed'
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.root),
+                                                'CLAUDE_PACING_DIR': str(self.root / 'state')})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _reason(self, prompt):
+        return pacing.cmd_prompt({'prompt': prompt}, CFG, NOW)['reason']
+
+    def test_firstCommand_showsTheMenuOnceAndWritesTheMarker(self):
+        first = self._reason('/pace status')
+        self.assertIn('first use', first)
+        for choice in ('/pace template L2', '/pace template off', '/pace template after'):
+            self.assertIn(choice, first)
+        self.assertTrue(self.marker.exists())
+        self.assertNotIn('first use', self._reason('/pace status'))
+
+    def test_typedForm_showsItToo(self):
+        self.assertIn('first use', self._reason('pace on'))
+
+    def test_guideFirst_showsTheMenuAfterThePathAndMarks(self):
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_NO_OPEN': '1'}):
+            first = self._reason('/pace guide')
+            second = self._reason('/pace guide')
+        self.assertTrue(first.startswith('pace guide: '), first)
+        self.assertIn('first use', first)
+        self.assertTrue(self.marker.exists())
+        self.assertNotIn('first use', second)
+
+    def test_templateChoiceFirst_marksWithoutTheMenu(self):
+        self.assertNotIn('first use', self._reason('/pace template L2'))
+        self.assertTrue(self.marker.exists())
+
+    def test_setupFirst_marksWithoutTheMenu(self):
+        self.assertNotIn('first use', self._reason('/pace setup'))
+        self.assertTrue(self.marker.exists())
+
+    def test_templateAlreadySet_marksWithoutTheMenu(self):
+        (self.root / 'state').mkdir()
+        (self.root / 'state' / 'ctl.json').write_text(json.dumps({'template': 'L1'}), encoding='utf-8')
+        self.assertNotIn('first use', self._reason('/pace status'))
+        self.assertTrue(self.marker.exists())
+
+    def test_unwritableMarker_repeatsTheMenuWithoutRaising(self):
+        (self.root / 'config').write_text('a file where the directory should be', encoding='utf-8')
+        self.assertIn('first use', self._reason('/pace status'))
+        self.assertIn('first use', self._reason('/pace status'))
+
+    def test_afterCommand_printsTheScriptNote(self):
+        reason = self._reason('/pace template after')
+        self.assertIn('statusline --full --after', reason)  # plain `statusline` ignores the flag
+        for mark in ('x02', 'x01'):  # a script must handle every reply `--full` can give
+            self.assertIn(mark, reason)
+        self.assertNotIn('first use', reason)
+
+    def test_ctlPath_showsTheMenuOnceToo(self):
+        def run():
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(pacing._ctl(['pacing.py', 'ctl', 'status'], CFG, NOW), 0)
+            return buf.getvalue()
+        self.assertIn('first use', run())
+        self.assertNotIn('first use', run())
+
+
 class Cli(unittest.TestCase):
     """Process-level checks: default OFF, fail-open, zero output when idle."""
 
@@ -1271,6 +1474,14 @@ class Cli(unittest.TestCase):
         self.assertEqual((code, out), (0, ''))
         self.assertTrue(list(Path(self.tmp.name).glob('samples.s1.jsonl')))
         self.assertTrue((Path(self.tmp.name) / 'decision.json').exists())
+
+    def test_statuslineFullAfter_printsTheAppendMark(self):
+        (Path(self.tmp.name) / 'ctl.json').write_text(json.dumps({'template': 'AFTER', 'wk': {'on': True}}),
+                                                      encoding='utf-8')
+        code, out = self._run('statusline', self._status(), '--full', '--after')
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith('\x02pace ['), repr(out))
+        self.assertNotIn('\n', out)
 
     def test_statusline_withoutRateLimits_failsOpen(self):
         code, out = self._run('statusline', {'session_id': 's1'})
