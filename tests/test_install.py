@@ -138,7 +138,7 @@ class Profile:
         self.home = base / 'Usér Home'
         self.tmp = base / 'tmp dir'
         self.cfg = self.home / '.claude'
-        self.state = self.tmp / 'claude-pacing'
+        self.state = self.tmp / ('claude-pacing' if os.name == 'nt' else f'claude-pacing-{os.getuid()}')
         for d in (self.home, self.tmp):
             d.mkdir(parents=True, exist_ok=True)
         env = {k: v for k, v in os.environ.items() if not k.upper().startswith(('CLAUDE_', 'ANTHROPIC_'))}

@@ -1,6 +1,6 @@
 """Behaviour tests for hooks/pacing.py (weekly pacing cadencer; default OFF)."""
 from __future__ import annotations
-import contextlib, datetime, io, json, os, subprocess, sys, tempfile, time, unittest
+import contextlib, datetime, fnmatch, io, json, os, re, stat, subprocess, sys, tempfile, time, types, unittest
 from unittest import mock
 from pathlib import Path
 
@@ -1431,6 +1431,267 @@ class FirstUse(unittest.TestCase):
             return buf.getvalue()
         self.assertIn('first use', run())
         self.assertNotIn('first use', run())
+
+
+class Hardening(unittest.TestCase):
+    """State in a temp dir is written and read back trusting only its owner (issue #4)."""
+    T0 = 1_791_640_000.0
+    posix_only = unittest.skipUnless(os.name != 'nt', 'owner and mode bits are a POSIX notion')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sd = self.tmp.name
+        self.env = mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': self.sd})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def _plant(self, name, obj):
+        Path(self.sd, name).write_text(json.dumps(obj), encoding='utf-8')
+
+    def test_dirProblem_trustsOnlyARealDirectoryOfTheCaller(self):
+        st = lambda kind, uid: types.SimpleNamespace(st_mode=kind | 0o700, st_uid=uid)
+        self.assertEqual(pacing._dir_problem(st(stat.S_IFDIR, 7), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFDIR, 8), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFLNK, 7), 7), '')
+        self.assertNotEqual(pacing._dir_problem(st(stat.S_IFREG, 7), 7), '')
+
+    def test_defaultStateName_isPerUserOnPosix(self):
+        want = 'claude-pacing' if os.name == 'nt' else f'claude-pacing-{os.getuid()}'
+        self.assertEqual(os.path.basename(pacing._DEFAULT_STATE), want)
+
+    @posix_only
+    def test_stateDir_isCreatedPrivate(self):
+        d = os.path.join(self.sd, 'fresh')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': d}):
+            pacing.state_dir(create=True)
+        self.assertEqual(stat.S_IMODE(os.lstat(d).st_mode), 0o700)
+
+    @posix_only
+    def test_stateDir_tightensALooseDefaultDirOfTheCaller(self):
+        os.chmod(self.sd, 0o755)
+        with mock.patch.object(pacing, '_DEFAULT_STATE', self.sd), \
+                mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': ''}):
+            pacing.state_dir()
+        self.assertEqual(stat.S_IMODE(os.lstat(self.sd).st_mode), 0o700)
+
+    @posix_only
+    def test_stateDir_leavesTheModeOfAnOverrideAlone(self):
+        os.chmod(self.sd, 0o755)
+        pacing.state_dir()  # CLAUDE_PACING_DIR is set to self.sd by setUp
+        self.assertEqual(stat.S_IMODE(os.lstat(self.sd).st_mode), 0o755)
+
+    @posix_only
+    def test_stateDir_refusesALink(self):
+        link = os.path.join(self.sd, 'link')
+        os.symlink(self.sd, link)
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': link}):
+            with self.assertRaises(PermissionError):
+                pacing.state_dir()
+
+    def test_writeText_neverUsesAPredictableTempName(self):
+        target = os.path.join(self.sd, 'ctl.json')
+        planted = f'{target}.{os.getpid()}.tmp'
+        Path(planted).write_text('planted', encoding='utf-8')
+        self.assertTrue(pacing._write_text(target, '{"a": 1}'))
+        self.assertEqual(Path(planted).read_text(encoding='utf-8'), 'planted')
+        self.assertEqual(Path(target).read_text(encoding='utf-8'), '{"a": 1}')
+        self.assertEqual(sorted(os.listdir(self.sd)), sorted(['ctl.json', os.path.basename(planted)]))
+
+    @posix_only
+    def test_writeText_createsPrivateFiles(self):
+        target = os.path.join(self.sd, 'x.json')
+        pacing._write_text(target, '{}')
+        self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0o600)
+
+    @posix_only
+    def test_writeText_appliesTheRequestedModeBeforeTheReplace(self):
+        target = os.path.join(self.sd, 'x.json')
+        pacing._write_text(target, '{}', mode=0o640)
+        self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0o640)
+
+    def test_readDecision_dropsWhatIsFromTheFutureOrNotOurs(self):
+        for planted in ({'ts': self.T0 + 1e9, 'state': 'L2', 'level': 2},
+                        {'ts': self.T0, 'state': '\x1b]52;c;AA\x07', 'level': 2},
+                        {'ts': True, 'state': 'L1'},
+                        {'state': 'L1'}):
+            self._plant('decision.json', planted)
+            self.assertIsNone(pacing._read_decision(self.sd, self.T0), planted)
+        self._plant('decision.json', {'ts': self.T0 - 5, 'state': 'L1', 'level': 1})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['state'], 'L1')
+
+    def test_readDecision_dropsRateTablesWithAnyNonNumericKey(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'10': 4.2, '\x1b[2J': 1.0},
+                                      'rates5': {'5': 1}})
+        dec = pacing._read_decision(self.sd, self.T0)
+        self.assertNotIn('rates', dec)
+        self.assertEqual(dec['rates5'], {'5': 1.0})
+
+    def test_slots_dropAFutureDatedSlot(self):
+        agents = Path(self.sd, 'agents')
+        agents.mkdir()
+        slot = agents / 'planted.a'
+        slot.write_text('x')
+        os.utime(slot, (self.T0 + 1e6, self.T0 + 1e6))
+        self.assertEqual(pacing._slots(self.sd, self.T0, CFG), [])
+        self.assertFalse(slot.exists())
+
+    def test_safeSid_keepsOnlyAPlainToken(self):
+        got = [pacing._safe_sid(v) for v in ('abc-123_D', '../../x', 'a/b', 'a\\b', '', None, 'y' * 65)]
+        self.assertEqual(got, ['abc-123_D', 'x', 'x', 'x', 'x', 'x', 'x'])
+
+    def test_statusline_recomputesAPlantedFutureDecision(self):
+        self._plant('ctl.json', {'wk': {'on': True}, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': NOW + 1e9, 'state': 'L2', 'level': 2, 'delay_wk': 45.0,
+                                      'axes': ['wk'], 'mult': 1.0, 'r5': 1e18, 'r7': 1e18})
+        raw = {'session_id': 's', 'rate_limits': {'five_hour': {'used_percentage': 40, 'resets_at': 1791648600},
+                                                  'seven_day': {'used_percentage': 71, 'resets_at': RESET7}}}
+        dec, _, _ = pacing._statusline_state(raw, CFG, NOW)
+        self.assertEqual(dec['ts'], NOW)
+
+    def test_enforce_ignoresAFutureDecision(self):
+        self._plant('ctl.json', {'on': True, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': self.T0 + 1e9, 'state': 'L1', 'level': 1, 'delay_rec': 45.0,
+                                      'delay_wk': 45.0})
+        slept = []
+        pacing.cmd_enforce({'tool_name': 'Edit', 'session_id': 's1'}, dict(CFG), self.T0, sleep=slept.append)
+        self.assertEqual(sum(slept), 0)
+
+    def test_enforce_sessionIdCannotNameAFileOutsideTheState(self):
+        self._plant('ctl.json', {'on': True, 'step': pacing.default_step(CFG)})
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1, 'delay_rec': 45.0,
+                                      'delay_wk': 45.0})
+        pacing.cmd_enforce({'tool_name': 'Edit', 'session_id': '../../evil'}, dict(CFG), self.T0 + 1,
+                           sleep=lambda s: None)
+        names = os.listdir(self.sd)
+        self.assertTrue(any(n.startswith('slept.x.') for n in names), names)
+        self.assertFalse(any('evil' in n for n in names), names)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _posix(uid=None):
+        """Run the POSIX branch of the directory checks anywhere: on Windows st_uid is 0, so uid defaults to it."""
+        uid = uid if uid is not None else (os.getuid() if hasattr(os, 'getuid') else 0)
+        with mock.patch.object(os, 'name', 'posix'), mock.patch.object(os, 'getuid', create=True, return_value=uid):
+            yield
+
+    def test_stateDir_isCreatedEvenForAReader(self):
+        d = os.path.join(self.sd, 'not-yet')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': d}), self._posix():
+            pacing.state_dir()
+        self.assertTrue(os.path.isdir(d))
+
+    def test_stateDir_refusesADirOfAnotherOwner(self):
+        other = (os.getuid() + 1) if hasattr(os, 'getuid') else 1
+        with self._posix(uid=other):
+            with self.assertRaises(PermissionError):
+                pacing.state_dir()
+
+    def test_stateDir_aPlantedFileIsAPermissionErrorNotAFileExistsError(self):
+        planted = os.path.join(self.sd, 'afile')
+        Path(planted).write_text('x', encoding='utf-8')
+        with mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': planted}), self._posix():
+            with self.assertRaises(PermissionError):
+                pacing.state_dir(create=True)
+
+    def test_stateDir_anOverrideIsValidatedButNeverChmodded(self):
+        with self._posix(), mock.patch.object(os, 'chmod') as chmod:
+            pacing.state_dir()
+        chmod.assert_not_called()
+
+    def test_stateDir_theDefaultIsTightenedWhenLoose(self):
+        with mock.patch.object(pacing, '_DEFAULT_STATE', self.sd), \
+                mock.patch.dict(os.environ, {'CLAUDE_PACING_DIR': ''}), self._posix():
+            with mock.patch.object(os, 'chmod') as chmod, \
+                    mock.patch.object(os, 'lstat', return_value=types.SimpleNamespace(
+                        st_mode=stat.S_IFDIR | 0o755, st_uid=os.getuid() if hasattr(os, 'getuid') else 0)):
+                pacing.state_dir()
+        chmod.assert_called_once_with(self.sd, 0o700)
+
+    def test_prompt_refreshesTheStableCopyEvenWhenTheStateDirIsRefused(self):
+        cfg = Path(self.sd) / 'cfg'
+        (cfg / 'pace').mkdir(parents=True)
+        stable = cfg / 'pace' / 'pacing.py'
+        stable.write_text('# old version', encoding='utf-8')
+        bad = Path(self.sd) / 'afile'
+        bad.write_text('x', encoding='utf-8')
+        env = {'CLAUDE_CONFIG_DIR': str(cfg), 'CLAUDE_PACING_DIR': str(bad)}
+        with mock.patch.dict(os.environ, env), self._posix():
+            with self.assertRaises(OSError):
+                pacing.cmd_prompt({'prompt': '/pace status'}, CFG, NOW)
+        self.assertEqual(stable.read_bytes(), Path(pacing.__file__).read_bytes())
+
+    def test_readDecision_dropsADecisionWithANonNumericField(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1,
+                                      'reduce_pct': '\x1b]52;c;AA\x07'})
+        self.assertIsNone(pacing._read_decision(self.sd, self.T0))
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'level': 1, 'reduce_pct': 10, 'r5': None,
+                                      'lead': -2.5})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['reduce_pct'], 10)
+
+    def test_readDecision_keepsTheRateKeysOfAFractionalWindow(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates': {'7.5': 1.0, '10': 2.0}})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'7.5': 1.0, '10': 2.0})
+
+    def test_readDecision_rendersTheRateKeysNeverKeepsThemRaw(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L1',
+                                      'rates': {'\r10': 2.0, '5\n': 1.0, ' 7.5 ': 3.0}})
+        self.assertEqual(pacing._read_decision(self.sd, self.T0)['rates'], {'10': 2.0, '5': 1.0, '7.5': 3.0})
+
+    def test_readDecision_dropsWhatIsNotFinite(self):
+        self._plant('decision.json', {'ts': self.T0, 'state': 'L3', 'level': 3, 'r5': float('inf')})
+        self.assertIsNone(pacing._read_decision(self.sd, self.T0))
+        for table in ({'nan': 1.0}, {'10': float('inf')}, {'inf': 1.0}):
+            self._plant('decision.json', {'ts': self.T0, 'state': 'L1', 'rates5': table})
+            self.assertNotIn('rates5', pacing._read_decision(self.sd, self.T0), table)
+
+    def test_manualLoadsNothingFromTheNetwork(self):
+        html = (HOOKS.parent / 'docs' / 'pacing-cadencer-readme.html').read_text(encoding='utf-8')
+        loads = re.findall(r'<(?:link|script|img|iframe)\b[^>]*(?:href|src)="https?://[^"]*"', html)
+        self.assertEqual(loads, [])
+        self.assertNotIn('@import url(http', html)
+
+    def test_commandAllowsOnlyTheScriptByItsQuotedPath(self):
+        md = (HOOKS.parent / 'commands' / 'pace.md').read_text(encoding='utf-8')
+        line = next(l for l in md.splitlines() if l.startswith('allowed-tools:'))
+        rules = re.findall(r'Bash\(([^)]*)\)', line)
+        self.assertEqual(len(rules), 6, line)
+        allowed = lambda cmd: any(fnmatch.fnmatchcase(cmd, r) for r in rules)
+        for ok in ('python3 -S "/home/u/.claude/plugins/cache/pace/0.14/scripts/pacing.py" ctl status',
+                   'python3 -S "/c/Users/u/pace/scripts/pacing.py" ctl status',
+                   'python -S "C:\\Users\\u x\\.claude\\plugins\\pace\\scripts\\pacing.py" ctl on',
+                   'py -3 -S "C:/Users/u/pace/scripts/pacing.py" ctl template after'):
+            self.assertTrue(allowed(ok), ok)
+        for bad in ('python3 -S -c "import os;os.system(1)" pacing.py ctl',
+                    'python3 -S "-cimport os;os.system(1)#pacing.py" ctl status',
+                    'python -S "-c" "import os;os.system(1)" "pacing.py" ctl',
+                    'python -S "-m x#pacing.py" ctl',
+                    'python3 -S /tmp/evil.py ctl status',
+                    'python3 "/x/pacing.py" ctl status',
+                    'python3 -c "print(1)" -S "/x/pacing.py" ctl'):
+            self.assertFalse(allowed(bad), bad)
+
+    @unittest.skipUnless(os.name == 'nt', 'POSIX paths are escaped; only Windows paths are refused')
+    def test_setup_refusesAPathItCannotQuote(self):
+        cfg = Path(self.sd) / 'a$b'
+        cfg.mkdir()
+        out = pacing.cmd_setup(str(cfg), pacing.__file__)
+        self.assertIn('cannot quote', out)
+        self.assertFalse((cfg / 'settings.json').exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'the quoting refusal is Windows-only')
+    def test_setup_aPythonPathWithADollarIsNotRefusedWhenABareNameResolvesToIt(self):
+        cfg = Path(self.sd) / 'cfg'
+        cfg.mkdir()
+        exe = r'C:\a$b\python.exe'
+        with mock.patch.object(pacing.sys, 'executable', exe), \
+                mock.patch.object(pacing.shutil, 'which', return_value=exe), \
+                mock.patch.object(pacing.os.path, 'realpath', side_effect=lambda p: p):
+            out = pacing.cmd_setup(str(cfg), pacing.__file__)
+        self.assertNotIn('cannot quote', out)
+        self.assertIn('python -S', (cfg / 'settings.json').read_text(encoding='utf-8'))
 
 
 class Cli(unittest.TestCase):

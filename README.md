@@ -84,7 +84,7 @@ The full list is `DEFAULTS` at the top of `scripts/pacing.py`.
 
 ## Updating and removing
 
-After a plugin update, pace refreshes the copy of the script that the status line runs on your next prompt, so there is nothing to redo.
+After a plugin update, pace refreshes the copy of the script that the status line runs on your next prompt, so there is nothing to redo. Version 0.14 moves the state to a private per-user directory on Linux and macOS: run `/pace on` again once.
 
 To remove it:
 
@@ -92,7 +92,7 @@ To remove it:
 /plugin uninstall pace@claude-pace
 ```
 
-then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settings.json` (the backup next to it is named `settings.json.pace-backup-<time>`) and the folder `~/.claude/pace/`. State lives in your system temp directory under `claude-pacing` and holds no secrets.
+then delete the `statusLine` entry that `/pace setup` added to `~/.claude/settings.json` (the backup next to it is named `settings.json.pace-backup-<time>`) and the folder `~/.claude/pace/`. State lives in your system temp directory under `claude-pacing` (`claude-pacing-<uid>`, mode 0700, on Linux and macOS) and holds no secrets. Until you remove that `statusLine` entry, the status line keeps running the copy in `~/.claude/pace/`. See [SECURITY.md](SECURITY.md).
 
 ## Tested on
 
@@ -114,7 +114,7 @@ Run by hand against the real Claude Code host (2.1.300, Windows 11, plugin loade
 | A real subagent takes a slot at `SubagentStart` and releases it at `SubagentStop` | pass |
 | `/pace guide` hands the manual to the OS opener (`os.startfile`) | ran without error; the browser window was not observed by the test |
 
-Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
+Not covered by any run: the anchored `allowed-tools` rules of 0.14 (`/*pacing.py`, `?:*pacing.py`) against the real host, which is expected to show at worst a permission prompt; the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
 
 ## Limits
 

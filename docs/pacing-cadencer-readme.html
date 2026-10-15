@@ -1,9 +1,6 @@
 <meta charset="utf-8">
 <title>Usage cadencer (pace)</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <style>
   /* Layout: Atlas shell (topbar 44px, sidebar 232px, content, statusbar 26px). Tokens: Atlas Gray 2 Ardosia + teal accent.
      Single dark look by choice, like Atlas itself; below 760px the sidebar becomes a scrolling tab strip. */
@@ -167,7 +164,7 @@
   <header class="topbar">
     <div class="brand">
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><polyline points="1,10 5,10 7,4 10,14 12,8 14,10 17,10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="brand__name">PACE</span><span class="brand__ver">v0.13</span>
+      <span class="brand__name">PACE</span><span class="brand__ver">v0.14</span>
     </div>
     <span class="vsep"></span>
     <div class="scope"><span class="scope__name" id="scope-name" data-pt="Cadenciador de uso">Usage cadencer</span><span class="scope__meta">hooks/pacing.py</span></div>
@@ -396,7 +393,7 @@
             <li data-pt="Erro, dado velho ou falta de <code>rate_limits</code> libera a execução.">An error, stale data or missing <code>rate_limits</code> lets the call run.</li>
             <li data-pt="Pausa ≤ <code>cap_s</code> (máx. 55 s) e, por turno, abaixo de <code>cache_ttl_s − cache_margin_s</code> (210 s): o cache barato continua valendo.">Pause ≤ <code>cap_s</code> (max 55 s) and, per turn, below <code>cache_ttl_s − cache_margin_s</code> (210 s): the cheap cache keeps hitting.</li>
             <li data-pt="Uma janela que já reiniciou nunca mantém pausa.">A window that already reset never keeps a pause.</li>
-            <li data-pt="Estado volátil em <code>%TEMP%\claude-pacing</code>, podado a 40 min.">Volatile state in <code>%TEMP%\claude-pacing</code>, pruned at 40 min.</li>
+            <li data-pt="Estado volátil em <code>%TEMP%\claude-pacing</code> (Linux e macOS: <code>claude-pacing-&lt;uid&gt;</code> no diretório temporário, modo 0700), podado a 40 min.">Volatile state in <code>%TEMP%\claude-pacing</code> (Linux and macOS: <code>claude-pacing-&lt;uid&gt;</code> in the temp directory, mode 0700), pruned at 40 min.</li>
           </ul></div>
           <div class="card"><h3 data-pt="Limites">Limits</h3><ul class="plain">
             <li data-pt="A pausa adia o consumo; não reduz tokens por tarefa.">The pause delays consumption; it does not cut tokens per task.</li>
@@ -413,7 +410,7 @@
           <div class="panel__head"><span class="label" data-pt="Referência">Reference</span><h2 data-pt="Remover">Remove</h2></div>
           <ul class="plain">
             <li data-pt="<strong>Pausar:</strong> <code>pace off</code>."><strong>Pause:</strong> <code>pace off</code>.</li>
-            <li data-pt="<strong>Limpar estado:</strong> apague <code>%TEMP%\claude-pacing</code>."><strong>Clear state:</strong> delete <code>%TEMP%\claude-pacing</code>.</li>
+            <li data-pt="<strong>Limpar estado:</strong> apague <code>%TEMP%\claude-pacing</code> (Linux e macOS: <code>claude-pacing-&lt;uid&gt;</code>)."><strong>Clear state:</strong> delete <code>%TEMP%\claude-pacing</code> (Linux and macOS: <code>claude-pacing-&lt;uid&gt;</code>).</li>
             <li data-pt="<strong>De vez:</strong> tire do <code>settings.json</code> os 4 hooks que chamam <code>pacing.py</code> e a <code>statusLine</code> do pace; apague <code>commands/pace.md</code> e <code>~/.claude/pace/</code>."><strong>Fully:</strong> remove from <code>settings.json</code> the 4 hooks that call <code>pacing.py</code> and pace's <code>statusLine</code>; delete <code>commands/pace.md</code> and <code>~/.claude/pace/</code>.</li>
           </ul>
         </section>
