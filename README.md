@@ -116,7 +116,7 @@ Run by hand against the real Claude Code host (2.1.300, Windows 11, plugin loade
 | A real subagent takes a slot at `SubagentStart` and releases it at `SubagentStop` | pass |
 | `/pace guide` hands the manual to the OS opener (`os.startfile`) | ran without error; the browser window was not observed by the test |
 
-Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine.
+Not covered by any run: the host on macOS or Linux, `/pace setup` through the host (it rewrites your real `settings.json`), Linux distributions other than Ubuntu, Debian, Fedora and Alpine. The procedure to run the host checks on macOS and Linux is in [docs/host-check.md](docs/host-check.md).
 
 ## Limits
 
